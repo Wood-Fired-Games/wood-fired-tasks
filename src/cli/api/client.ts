@@ -5,6 +5,7 @@ import { NotAuthenticatedError } from './errors.js';
 import {
   parseTaskResponse,
   parseProjectResponse,
+  parseUnarchiveProjectResponse,
   parseTaskListResponse,
   parseProjectListResponse,
 } from '../../api/api-response.js';
@@ -15,6 +16,7 @@ import type {
   TaskFilters,
   ApiErrorResponse,
   ProjectResponse,
+  UnarchiveProjectResponse,
   CreateProjectInput,
   UpdateProjectInput,
   ArchiveProjectOptions,
@@ -370,12 +372,13 @@ export async function archiveProject(
 
 /**
  * Unarchive a project (WFT #2477). A project that is not archived comes back
- * unchanged.
+ * unchanged. `reevaluation_failed_task_ids` names the tasks whose
+ * re-evaluation rolled back (WFT #2542).
  */
-export async function unarchiveProject(id: number): Promise<ProjectResponse> {
+export async function unarchiveProject(id: number): Promise<UnarchiveProjectResponse> {
   const endpoint = `/api/v1/projects/${id}/unarchive`;
   const payload = await apiRequest<unknown>(endpoint, { method: 'POST' });
-  return parseProjectResponse(payload, `POST ${endpoint}`);
+  return parseUnarchiveProjectResponse(payload, `POST ${endpoint}`);
 }
 
 /**

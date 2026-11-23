@@ -52,7 +52,18 @@ export interface ProjectServiceDeps {
 
 /** Re-evaluates one unarchived project (implemented by the WorkflowEngine). */
 export interface UnarchiveReevaluator {
-  reevaluateProject(projectId: number): unknown;
+  reevaluateProject(projectId: number): { failedTaskIds: number[] };
+}
+
+/**
+ * What an unarchive returns (WFT #2542): the project, and the tasks whose
+ * re-evaluation rolled back. Empty when the pass was clean or no re-evaluator
+ * is bound. A non-empty list means the unarchive itself succeeded but those
+ * tasks kept their old state; unarchiving again retries them.
+ */
+export interface UnarchiveResult {
+  project: Project;
+  reevaluationFailedTaskIds: number[];
 }
 
 /** Pagination plus the `archived` listing filter (default `exclude`). */
@@ -96,11 +107,11 @@ export class ProjectService {
   }
 
   /**
-   * The unarchive re-evaluation (WFT #2532). A real unarchive reaches it
-   * through the `project.unarchived` event; a repeated (no-op) unarchive emits
-   * nothing, so it calls this directly — the retry path for a task whose
-   * re-evaluation failed. Bound late because the workflow engine is built
-   * after this service; `null` unbinds it.
+   * The unarchive re-evaluation (WFT #2532). Every unarchive calls it after
+   * the unarchive has committed — a real one and a repeated (no-op) one, which
+   * is the retry path for a task whose re-evaluation failed — and returns its
+   * failed task ids to the caller (WFT #2542). Bound late because the workflow
+   * engine is built after this service; `null` unbinds it.
    */
   private unarchiveReevaluator: UnarchiveReevaluator | null = null;
 
@@ -259,11 +270,12 @@ export class ProjectService {
   /**
    * Unarchive a project: clears `archived_at`, `archived_by` and
    * `archive_reason`. A no-op that emits nothing when the project is not
-   * archived (it only re-runs the re-evaluation, see `setUnarchiveReevaluator`);
-   * otherwise emits `project.unarchived` exactly once (never
-   * `project.updated`). `actor` is the authenticated caller.
+   * archived; otherwise emits `project.unarchived` exactly once (never
+   * `project.updated`). Either way it then runs the re-evaluation (see
+   * `setUnarchiveReevaluator`) and returns the ids that failed. `actor` is the
+   * authenticated caller.
    */
-  unarchiveProject(id: number, actor: string): Project {
+  unarchiveProject(id: number, actor: string): UnarchiveResult {
     if (!this.projectRepo.findById(id)) {
       throw new NotFoundError('Project', id);
     }
@@ -276,12 +288,12 @@ export class ProjectService {
         data: project,
         metadata: { source: 'user', actor },
       });
-    } else {
-      // Nothing changed, so no event: re-run the idempotent re-evaluation so
-      // a task that failed on the first pass gets another try (WFT #2532).
-      this.unarchiveReevaluator?.reevaluateProject(id);
     }
-    return project;
+    // The unarchive has committed. Run the idempotent re-evaluation; on a
+    // repeated unarchive this is the retry for a task that failed before
+    // (WFT #2532), and its failures go back to the caller (WFT #2542).
+    const outcome = this.unarchiveReevaluator?.reevaluateProject(id);
+    return { project, reevaluationFailedTaskIds: outcome?.failedTaskIds ?? [] };
   }
 
   private assertNoUnfinishedTasks(projectId: number): void {

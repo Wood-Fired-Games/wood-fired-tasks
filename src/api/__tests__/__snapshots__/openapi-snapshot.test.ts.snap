@@ -6628,7 +6628,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
     },
     "/api/v1/projects/{id}/unarchive": {
       "post": {
-        "description": "Unarchive a project. Unarchiving a project that is not archived returns it unchanged.",
+        "description": "Unarchive a project. Unarchiving a project that is not archived returns it unchanged. Either way the project is then re-evaluated; \`reevaluation_failed_task_ids\` names the tasks whose re-evaluation rolled back (empty on a clean pass), and unarchiving again retries them.",
         "parameters": [
           {
             "in": "path",
@@ -7080,6 +7080,15 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "name": {
                       "type": "string",
                     },
+                    "reevaluation_failed_task_ids": {
+                      "description": "Tasks whose re-evaluation after the unarchive rolled back and kept their old state. Empty on a clean pass. Unarchive again to retry them.",
+                      "items": {
+                        "maximum": 9007199254740991,
+                        "minimum": -9007199254740991,
+                        "type": "integer",
+                      },
+                      "type": "array",
+                    },
                     "scm": {
                       "additionalProperties": false,
                       "nullable": true,
@@ -7237,6 +7246,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "description",
                     "created_at",
                     "updated_at",
+                    "reevaluation_failed_task_ids",
                   ],
                   "type": "object",
                 },

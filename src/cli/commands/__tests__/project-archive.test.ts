@@ -245,6 +245,47 @@ describe('project-archive / project-unarchive commands (WFT #2477)', () => {
       expect(jsonOutput).toHaveBeenCalledWith({ project: unarchived });
     });
 
+    it('names the tasks whose re-evaluation failed on stderr, and still exits 0 (WFT #2542)', async () => {
+      const { unarchiveProject } = await client();
+      vi.mocked(unarchiveProject).mockResolvedValue({
+        ...unarchived,
+        reevaluation_failed_task_ids: [41, 42],
+      });
+
+      await run('project-unarchive', '7');
+
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Project #7 unarchived'));
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('re-evaluation failed for tasks 41, 42'),
+      );
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('tasks project-unarchive 7'));
+      expect(process.exitCode).toBe(0);
+    });
+
+    it('--json carries reevaluation_failed_task_ids in the project envelope (WFT #2542)', async () => {
+      const { unarchiveProject } = await client();
+      const { jsonOutput } = await import('../../output/json-output.js');
+      const partial = { ...unarchived, reevaluation_failed_task_ids: [41] };
+      vi.mocked(unarchiveProject).mockResolvedValue(partial);
+
+      await run('--json', 'project-unarchive', '7');
+
+      expect(jsonOutput).toHaveBeenCalledWith({ project: partial });
+      expect(errorSpy).not.toHaveBeenCalled();
+    });
+
+    it('prints no warning when no task failed', async () => {
+      const { unarchiveProject } = await client();
+      vi.mocked(unarchiveProject).mockResolvedValue({
+        ...unarchived,
+        reevaluation_failed_task_ids: [],
+      });
+
+      await run('project-unarchive', '7');
+
+      expect(errorSpy).not.toHaveBeenCalled();
+    });
+
     it('a 404 exits non-zero', async () => {
       const { unarchiveProject, ApiClientError } = await client();
       vi.mocked(unarchiveProject).mockRejectedValue(

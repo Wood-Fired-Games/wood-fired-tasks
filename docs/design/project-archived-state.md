@@ -84,10 +84,11 @@ name cannot be reused without renaming after unarchive.
 **Unarchive leaves the project in the state it would have had** (WFT #2522).
 While a project is archived the workflow cascade skips its tasks, so after a
 forced archive a task can stay `blocked` although every blocker has finished,
-and a parent can stay open although every child is done. When an unarchive
-actually changes the project, the workflow engine — as a subscriber to
-`project.unarchived`, after the unarchive has committed — re-evaluates that
-project once, in one transaction:
+and a parent can stay open although every child is done. After an unarchive
+has committed, the unarchive call itself (`ProjectService.unarchiveProject`)
+has the workflow engine re-evaluate that project once. It is a direct call,
+not a subscriber to `project.unarchived`, so that the outcome can be returned
+to the caller (WFT #2542):
 
 - each `blocked` task that has at least one blocker, all of them `done`,
   becomes `open`;
@@ -100,8 +101,8 @@ These writes carry `source: 'workflow'` and emit the usual `task.updated` and
 task with an unfinished blocker, and a `blocked`, `backlogged` or `closed`
 parent are left alone. A task set to `blocked` by hand on top of blockers
 that were already all `done` is opened too: the pass cannot tell it from a
-task the archive held back (WFT #2532). The pass is idempotent, and a project
-archived again before the event is handled is skipped.
+task the archive held back (WFT #2532). The pass is idempotent, and does
+nothing to a project that is archived.
 
 Each candidate task is re-evaluated in its own transaction (WFT #2532). If its
 write fails, only that task's cascade rolls back and is logged with the task
@@ -109,8 +110,24 @@ and project ids; the other tasks still change, and the project stays
 unarchived. A repeated unarchive of a project that is not archived emits no
 event but runs the pass again, which is the retry path for a task that
 failed. The pass runs wherever the unarchive runs: REST, the remote bridge
-(through REST) and the stdio MCP server all build the app with the same
-`createApp`, which starts the workflow engine.
+(through REST), the stdio MCP server and Slack all reach the same
+`ProjectService`, which `createApp` binds to the workflow engine.
+
+**A partial failure is visible to the caller** (WFT #2542). The unarchive
+still succeeds (200), and its result names the tasks whose re-evaluation
+rolled back, in one shape on every surface: the project's fields plus
+`reevaluation_failed_task_ids: number[]`, empty on a clean pass.
+
+| Surface | Where the ids appear |
+| --- | --- |
+| REST `POST /projects/:id/unarchive` | `reevaluation_failed_task_ids` in the 200 body |
+| stdio and remote `unarchive_project` | the same field in `structuredContent`, and a warning line in the text |
+| CLI `tasks project-unarchive` | a warning on stderr (exit status stays 0); with `--json`, the field inside `project` |
+| Slack `/tasks project-unarchive` | a warning block |
+
+The warning names the tasks and says to unarchive again to retry them. A
+response from a server older than #2542 has no field; clients treat it as
+absent, not as "nothing failed".
 
 ### 2.5 Default visibility
 

@@ -3,7 +3,7 @@ import { ITaskRepository, IDependencyRepository } from '../repositories/interfac
 import { TaskService } from './task.service.js';
 import { EventBus } from '../events/event-bus.js';
 import { VALID_STATUS_TRANSITIONS } from '../types/task.js';
-import type { ProjectEvent, TaskEvent } from '../events/types.js';
+import type { TaskEvent } from '../events/types.js';
 
 /** Outcome of one unarchive re-evaluation pass (WFT #2532). */
 export interface ReevaluationResult {
@@ -34,16 +34,16 @@ export interface ReevaluationResult {
  * - Unarchive re-evaluation (WFT #2522): the skip above means a project can
  *   come back from the archive with a task still `blocked` although every
  *   blocker finished meanwhile, or a parent still open although every child is
- *   done. The engine therefore also subscribes to `project.unarchived` and,
- *   AFTER the unarchive has committed, re-evaluates that one project: each
- *   blocked task whose blockers are all done is opened, and each parent whose
- *   children are all done is auto-completed, with the normal
+ *   done. `ProjectService.unarchiveProject` therefore calls `reevaluateProject`
+ *   AFTER the unarchive has committed, and it re-evaluates that one project:
+ *   each blocked task whose blockers are all done is opened, and each parent
+ *   whose children are all done is auto-completed, with the normal
  *   `source: 'workflow'` events. Each candidate runs in its own cascade
- *   transaction, so one failing task does not undo the others (WFT #2532).
- *   It is idempotent — a second run finds no candidate — and does nothing if
- *   the project is archived again by the time the event is handled. A
- *   repeated (no-op) unarchive re-runs it through ProjectService, which is
- *   the retry path for a task that failed.
+ *   transaction, so one failing task does not undo the others (WFT #2532),
+ *   and the ids that failed are returned to the unarchive's caller
+ *   (WFT #2542). It is idempotent — a second run finds no candidate — and
+ *   does nothing if the project is archived. A repeated (no-op) unarchive
+ *   runs it again, which is the retry path for a task that failed.
  * - Cascade depth counts actual auto-completions and auto-unblocks, not intermediate transitions.
  *
  * Transaction atomicity (SC-5):
@@ -94,15 +94,10 @@ export class WorkflowEngine {
       { ignoreTransaction: true },
     );
     this.unsubscribes.push(unsub);
-
-    // Deliberately NOT `ignoreTransaction`: if the unarchive is ever emitted
-    // inside a transactional buffer, the re-evaluation must wait for that
-    // transaction to commit, never run inside it.
-    this.unsubscribes.push(
-      this.eventBus.subscribe('project.unarchived', (event: ProjectEvent) =>
-        this.handleProjectUnarchived(event),
-      ),
-    );
+    // The unarchive re-evaluation is NOT driven by `project.unarchived`:
+    // `ProjectService.unarchiveProject` calls `reevaluateProject` itself after
+    // the unarchive has committed, so it can return `failedTaskIds` to the
+    // caller (WFT #2542). An event subscriber's result has nowhere to go.
   }
 
   /**
@@ -132,14 +127,6 @@ export class WorkflowEngine {
       // Already inside a transaction (recursive call from EventBus)
       this.processCascade(event);
     }
-  }
-
-  /**
-   * Handle a project.unarchived event: re-evaluate the project once, as its
-   * own cascade (see the class doc, "Unarchive re-evaluation").
-   */
-  private handleProjectUnarchived(event: ProjectEvent): void {
-    this.reevaluateProject(event.data.id);
   }
 
   /**
@@ -187,9 +174,10 @@ export class WorkflowEngine {
    * WFT #2532: each candidate is its own cascade (one transaction, one event
    * buffer), so a task whose write fails rolls back only its own cascade; the
    * other candidates still commit. A failure is logged with the task and
-   * project ids and reported in `failedTaskIds`. The pass is idempotent, so it
-   * is safe to run again: `ProjectService.unarchiveProject` re-runs it on a
-   * repeated (no-op) unarchive, which is the retry path for a failed task.
+   * project ids and reported in `failedTaskIds`, which
+   * `ProjectService.unarchiveProject` hands back to its caller (WFT #2542).
+   * The pass is idempotent, so it is safe to run again: a repeated (no-op)
+   * unarchive runs it again, which is the retry path for a failed task.
    *
    * Does nothing when the project is archived (again) or gone.
    */

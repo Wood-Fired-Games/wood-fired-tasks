@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -228,5 +228,58 @@ describe('end to end: archived project state through the remote bridge', () => {
     expect(unarchived.isError).toBeFalsy();
 
     expect((await ok('get_task', { id: dependentId })).status).toBe('open');
+  });
+
+  it('a task whose re-evaluation fails is named by unarchive_project on both transports (WFT #2542)', async () => {
+    const liveId = await createProject('partial live');
+    const projectId = await createProject('partial');
+    const blockerId = await createTask(liveId, 'blocker');
+    const failingId = await createTask(projectId, 'failing dependent');
+    await ok('update_task', {
+      id: failingId,
+      updates: { status: 'blocked', blocked_by: [blockerId] },
+    });
+    await ok('archive_project', { id: projectId, force: true, reason: 'paused' });
+    await finish(blockerId);
+
+    // Fault injection only: the write of one task fails inside the server.
+    const original = app.taskService.updateTask.bind(app.taskService);
+    const spy = vi
+      .spyOn(app.taskService, 'updateTask')
+      .mockImplementation((taskId: number, ...rest: unknown[]) => {
+        if (taskId === failingId) {
+          throw new Error(`simulated write failure on task ${taskId}`);
+        }
+        return (original as (...args: unknown[]) => ReturnType<typeof original>)(taskId, ...rest);
+      });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      // The real unarchive through the bridge (REST underneath)...
+      const viaRemote = await call(remote, 'unarchive_project', { id: projectId });
+      expect(viaRemote.isError).toBeFalsy();
+      expect(viaRemote.structuredContent).toMatchObject({
+        id: projectId,
+        archived: false,
+        reevaluation_failed_task_ids: [failingId],
+      });
+      expect(text(viaRemote)).toContain(`re-evaluation failed for task ${failingId}`);
+
+      // ...and the repeated (retry) unarchive on stdio, still failing.
+      const viaStdio = await call(stdio, 'unarchive_project', { id: projectId });
+      expect(viaStdio.isError).toBeFalsy();
+      expect(viaStdio.structuredContent).toMatchObject({
+        id: projectId,
+        reevaluation_failed_task_ids: [failingId],
+      });
+      expect(text(viaStdio)).toContain(`re-evaluation failed for task ${failingId}`);
+    } finally {
+      spy.mockRestore();
+      errorSpy.mockRestore();
+    }
+
+    const retried = await call(remote, 'unarchive_project', { id: projectId });
+    expect(retried.structuredContent).toMatchObject({ reevaluation_failed_task_ids: [] });
+    expect(text(retried)).not.toContain('re-evaluation failed');
+    expect((await ok('get_task', { id: failingId })).status).toBe('open');
   });
 });

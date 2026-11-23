@@ -139,7 +139,9 @@ function makeMockServices(): Services {
       createProject: vi.fn().mockReturnValue(makeMockProject()),
       updateProject: vi.fn().mockReturnValue(makeMockProject()),
       archiveProject: vi.fn().mockReturnValue(makeMockProject({ archived: true })),
-      unarchiveProject: vi.fn().mockReturnValue(makeMockProject()),
+      unarchiveProject: vi
+        .fn()
+        .mockReturnValue({ project: makeMockProject(), reevaluationFailedTaskIds: [] }),
       deleteProject: vi.fn().mockReturnValue(undefined),
     } as unknown as Services['projectService'],
     dependencyService: {
@@ -979,7 +981,10 @@ describe('registerTasksCommand', () => {
           display_name: 'alice-tracker',
         } as unknown as ReturnType<Services['userRepository']['findBySlackUserId']>);
         vi.mocked(services.projectService.archiveProject).mockReturnValue(archivedProject);
-        vi.mocked(services.projectService.unarchiveProject).mockReturnValue(makeMockProject());
+        vi.mocked(services.projectService.unarchiveProject).mockReturnValue({
+          project: makeMockProject(),
+          reevaluationFailedTaskIds: [],
+        });
 
         await run('project-archive 5');
         expect(services.projectService.archiveProject).toHaveBeenCalledWith(5, {}, 'alice-tracker');
@@ -990,7 +995,10 @@ describe('registerTasksCommand', () => {
           ...trackerUser,
           display_name: 'alice-tracker',
         } as unknown as ReturnType<Services['userRepository']['findBySlackUserId']>);
-        vi.mocked(services.projectService.unarchiveProject).mockReturnValue(makeMockProject());
+        vi.mocked(services.projectService.unarchiveProject).mockReturnValue({
+          project: makeMockProject(),
+          reevaluationFailedTaskIds: [],
+        });
 
         await run('project-unarchive 5');
         expect(services.projectService.unarchiveProject).toHaveBeenCalledWith(5, 'alice-tracker');
@@ -1077,7 +1085,10 @@ describe('registerTasksCommand', () => {
 
     describe('/tasks project-unarchive', () => {
       it('unarchives the project as the Slack user and confirms', async () => {
-        vi.mocked(services.projectService.unarchiveProject).mockReturnValue(makeMockProject());
+        vi.mocked(services.projectService.unarchiveProject).mockReturnValue({
+          project: makeMockProject(),
+          reevaluationFailedTaskIds: [],
+        });
 
         const responded = await run('project-unarchive 5');
 
@@ -1086,6 +1097,18 @@ describe('registerTasksCommand', () => {
         expect(responded.response_type).toBe('ephemeral');
         expect(responded.text).toBe('Project #5 unarchived');
         expect(responded.blocks[0]?.text?.text).toContain(':white_check_mark:');
+      });
+
+      it('names the tasks whose re-evaluation failed (WFT #2542)', async () => {
+        vi.mocked(services.projectService.unarchiveProject).mockReturnValue({
+          project: makeMockProject(),
+          reevaluationFailedTaskIds: [41],
+        });
+
+        const responded = await run('project-unarchive 5');
+
+        const texts = responded.blocks.map((block) => block.text?.text ?? '');
+        expect(texts.some((t) => t.includes('re-evaluation failed for task 41'))).toBe(true);
       });
 
       it('responds with a usage error when no id is given', async () => {

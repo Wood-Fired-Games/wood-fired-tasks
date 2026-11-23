@@ -569,12 +569,16 @@ describe('ProjectService', () => {
       it('clears the archive columns and returns the project', () => {
         service.archiveProject(projectId, { reason: 'shipped' }, 'alice');
 
-        expect(service.unarchiveProject(projectId, 'bob')).toMatchObject({
-          id: projectId,
-          archived: false,
-          archived_at: null,
-          archived_by: null,
-          archive_reason: null,
+        expect(service.unarchiveProject(projectId, 'bob')).toEqual({
+          project: expect.objectContaining({
+            id: projectId,
+            archived: false,
+            archived_at: null,
+            archived_by: null,
+            archive_reason: null,
+          }),
+          // No re-evaluator bound: no pass ran, so nothing failed (WFT #2542).
+          reevaluationFailedTaskIds: [],
         });
       });
 
@@ -582,7 +586,7 @@ describe('ProjectService', () => {
         const before = service.getProject(projectId);
         emitSpy.mockClear();
 
-        expect(service.unarchiveProject(projectId, 'bob')).toEqual(before);
+        expect(service.unarchiveProject(projectId, 'bob').project).toEqual(before);
         expect(emitSpy).not.toHaveBeenCalled();
       });
 
@@ -597,7 +601,7 @@ describe('ProjectService', () => {
 
         const archived = service.archiveProject(projectId, { reason: 'shipped' }, 'alice');
         service.archiveProject(projectId, { reason: 'again' }, 'alice');
-        const restored = service.unarchiveProject(projectId, 'bob');
+        const restored = service.unarchiveProject(projectId, 'bob').project;
         service.unarchiveProject(projectId, 'bob');
 
         expect(emitSpy.mock.calls).toEqual([
