@@ -793,6 +793,11 @@ Return an archived project to normal use. Requires the `write` scope.
 blockers all finished while it was archived are reopened. Unarchiving a project
 that is not archived returns it unchanged.
 
+**Result:** the project plus `reevaluation_failed_task_ids`, the tasks whose
+re-evaluation rolled back and kept their old state (empty on a clean pass); the
+text then carries a warning line naming them. Call `unarchive_project` again to
+retry them.
+
 #### delete_project
 
 Delete a project by its ID.

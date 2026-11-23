@@ -11,6 +11,7 @@ import { NotFoundError, ValidationError, BusinessError } from '../../services/er
 import { formatTaskList, formatTaskDetail } from '../task-formatter.js';
 import { formatProjectList, formatProjectDetail } from '../formatters/project-formatter.js';
 import { escapeSlackMrkdwn } from '../mrkdwn.js';
+import { formatReevaluationFailures } from '../../mcp/lib/project-tool-definitions.js';
 import { ALLOWED_EVENT_TYPES, isAllowedEventType } from '../../events/types.js';
 
 /**
@@ -662,10 +663,27 @@ async function handleProjectUnarchive(
   if (user === null) {
     return;
   }
-  const project = services.projectService.unarchiveProject(id, user.display_name);
+  const { project, reevaluationFailedTaskIds } = services.projectService.unarchiveProject(
+    id,
+    user.display_name,
+  );
+  // WFT #2542: name the tasks whose re-evaluation rolled back.
+  const warning = formatReevaluationFailures(id, reevaluationFailedTaskIds);
+  const warningBlocks: KnownBlock[] = warning
+    ? [
+        {
+          type: 'section',
+          text: { type: 'mrkdwn', text: `:warning: ${escapeSlackMrkdwn(warning)}` },
+        } as KnownBlock,
+      ]
+    : [];
   await respondBlocks(
     respond,
-    [...confirmation(`Project #${id} unarchived.`), ...formatProjectDetail(project)],
+    [
+      ...confirmation(`Project #${id} unarchived.`),
+      ...warningBlocks,
+      ...formatProjectDetail(project),
+    ],
     `Project #${id} unarchived`,
   );
 }

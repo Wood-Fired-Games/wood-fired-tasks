@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-11-23T21:35:09.258Z",
+    "generated_at": "2026-11-23T22:27:57.983Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -135,8 +135,8 @@
       "status": "present",
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 30000,
-      "actual_lines": 1386,
-      "sha256": "44104fbe0cd9bc1a048720e23c3d639097826756f046195193094ca493aadefc"
+      "actual_lines": 1391,
+      "sha256": "67e3f12bcde483742253baa7aa1a55c827a8a7dd6b638eec2e16a847c4489c0d"
     },
     {
       "path": "docs/CLI.md",
@@ -459,7 +459,7 @@
       "status": "present",
       "approx_token_budget": 2100,
       "actual_lines": 103,
-      "sha256": "fc637063ad13a652ef1eb9163a10182ded879e50b8765fc51649d002ab21f710",
+      "sha256": "e885781a87e0eb32b8599a21fe259e0cbf13901585388b50f1bd64e5ad170217",
       "actual_owner": "Repository maintainers"
     },
     {

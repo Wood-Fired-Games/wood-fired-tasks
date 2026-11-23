@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import { TaskResponseSchema } from './routes/tasks/schemas.js';
-import { ProjectResponseSchema } from './routes/projects/schemas.js';
+import {
+  ProjectResponseSchema,
+  UnarchiveProjectClientResponseSchema,
+} from './routes/projects/schemas.js';
 
 /**
  * Shared REST/API RESPONSE validators for the highest-risk client paths.
@@ -103,6 +106,11 @@ export function parseTaskResponse(payload: unknown, endpoint: string) {
 /** Convenience: validate a single project response body. */
 export function parseProjectResponse(payload: unknown, endpoint: string) {
   return parseResponse(ProjectResponseSchema, payload, endpoint);
+}
+
+/** Convenience: validate a POST /projects/:id/unarchive body (WFT #2542). */
+export function parseUnarchiveProjectResponse(payload: unknown, endpoint: string) {
+  return parseResponse(UnarchiveProjectClientResponseSchema, payload, endpoint);
 }
 
 /** Convenience: validate a task list (envelope or bare array). */

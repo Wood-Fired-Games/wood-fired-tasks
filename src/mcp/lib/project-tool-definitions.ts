@@ -27,7 +27,9 @@ export const ARCHIVE_PROJECT_DESCRIPTION =
 export const UNARCHIVE_PROJECT_DESCRIPTION =
   'Unarchive a project so it accepts work again and returns to default listings. Blocked ' +
   'tasks whose blockers all finished while it was archived are reopened. Unarchiving a ' +
-  'project that is not archived returns it unchanged.';
+  'project that is not archived returns it unchanged. The result carries ' +
+  '`reevaluation_failed_task_ids`: tasks whose re-evaluation rolled back (empty on a clean ' +
+  'pass); call unarchive_project again to retry them.';
 
 /**
  * `archive_project` arguments. `reason` and `force` are validated by the
@@ -80,6 +82,34 @@ export function formatArchiveResult(project: NamedProject): string {
   return `Project ${project.id} archived: ${project.name}`;
 }
 
-export function formatUnarchiveResult(project: NamedProject): string {
-  return `Project ${project.id} unarchived: ${project.name}`;
+/**
+ * The warning for tasks whose unarchive re-evaluation rolled back
+ * (WFT #2542), or null when none did. Shared by the MCP tools (both
+ * transports), the CLI and Slack so every surface says the same thing.
+ */
+export function formatReevaluationFailures(
+  projectId: number,
+  failedTaskIds: readonly number[] | undefined,
+): string | null {
+  if (!failedTaskIds || failedTaskIds.length === 0) {
+    return null;
+  }
+  const noun = failedTaskIds.length === 1 ? 'task' : 'tasks';
+  return (
+    `Warning: re-evaluation failed for ${noun} ${failedTaskIds.join(', ')}; ` +
+    `they kept their old state. Unarchive again to retry ` +
+    `(tasks project-unarchive ${projectId}, or unarchive_project).`
+  );
+}
+
+/** The unarchive result: the confirmation, then any re-evaluation warning. */
+export function formatUnarchiveResult(
+  project: NamedProject & { reevaluation_failed_task_ids?: readonly number[] | undefined },
+): string {
+  const lines = [`Project ${project.id} unarchived: ${project.name}`];
+  const warning = formatReevaluationFailures(project.id, project.reevaluation_failed_task_ids);
+  if (warning) {
+    lines.push(warning);
+  }
+  return lines.join('\n');
 }

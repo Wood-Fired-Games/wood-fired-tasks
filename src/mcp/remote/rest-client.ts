@@ -4,6 +4,7 @@ import type {
   UpdateTaskInput,
   TaskFilters,
   ProjectResponse,
+  UnarchiveProjectResponse,
   CreateProjectInput,
   UpdateProjectInput,
   DependencyResponse,
@@ -29,6 +30,7 @@ import type { ModelCatalogEntry } from '../../schemas/model-catalog.schema.js';
 import {
   parseTaskResponse,
   parseProjectResponse,
+  parseUnarchiveProjectResponse,
   parseTaskListResponse,
   parseProjectListResponse,
 } from '../../api/api-response.js';
@@ -419,10 +421,10 @@ export class RestClient {
     return parseProjectResponse(payload, `POST ${endpoint}`);
   }
 
-  async unarchiveProject(id: number): Promise<ProjectResponse> {
+  async unarchiveProject(id: number): Promise<UnarchiveProjectResponse> {
     const endpoint = `/api/v1/projects/${id}/unarchive`;
     const payload = await this.request<unknown>(endpoint, { method: 'POST' });
-    return parseProjectResponse(payload, `POST ${endpoint}`);
+    return parseUnarchiveProjectResponse(payload, `POST ${endpoint}`);
   }
 
   async listProjects(params?: ProjectListParams): Promise<ProjectResponse[]> {

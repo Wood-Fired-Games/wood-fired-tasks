@@ -11,6 +11,7 @@ import {
   ErrorResponseSchema,
   ProjectResponseSchema,
   ProjectListPaginatedResponseSchema,
+  UnarchiveProjectResponseSchema,
 } from './schemas.js';
 import dependencyGraphRoutes from './dependency-graph.js';
 import topologyRoutes from './topology.js';
@@ -120,21 +121,24 @@ const projectRoutes: FastifyPluginAsyncZod = async (fastify) => {
       schema: {
         tags: ['projects'],
         description:
-          'Unarchive a project. Unarchiving a project that is not archived returns it unchanged.',
+          'Unarchive a project. Unarchiving a project that is not archived returns it unchanged. ' +
+          'Either way the project is then re-evaluated; `reevaluation_failed_task_ids` names the ' +
+          'tasks whose re-evaluation rolled back (empty on a clean pass), and unarchiving again ' +
+          'retries them.',
         params: z.object({ id: z.coerce.number().int().positive() }),
         response: {
-          200: ProjectResponseSchema,
+          200: UnarchiveProjectResponseSchema,
           400: ErrorResponseSchema.describe('Invalid id.'),
           404: ErrorResponseSchema.describe('No project with this id.'),
         },
       },
     },
     async (request, reply) => {
-      const project = fastify.projectService.unarchiveProject(
+      const { project, reevaluationFailedTaskIds } = fastify.projectService.unarchiveProject(
         request.params.id,
         requireUser(request).displayName,
       );
-      return reply.send(project);
+      return reply.send({ ...project, reevaluation_failed_task_ids: reevaluationFailedTaskIds });
     },
   );
 

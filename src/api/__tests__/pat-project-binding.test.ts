@@ -381,6 +381,49 @@ describe('backward compatibility — a token with NO binding keeps cross-project
   });
 });
 
+/**
+ * WFT #2544: the wft-router sweep reads `GET /api/v1/projects/:id` to skip an
+ * archived project. Can a project-bound router token make that read? Yes for
+ * its own project, at the `read` tier and above; no (403) for any other, which
+ * the sweep treats as a failed lookup, not as "archived".
+ */
+describe('project binding — the wft-router project lookup (WFT #2544)', () => {
+  it.each([['read'], ['write']] as const)(
+    'a %s token bound to A reads GET /projects/A, with its archived flag',
+    async (scope) => {
+      const { headers } = seedAuth(harness.db, {
+        displayName: `router-${scope}-${Math.random()}`,
+        scopes: [scope],
+        projectId: harness.projectA,
+      });
+      const res = await harness.server.inject({
+        method: 'GET',
+        url: `/api/v1/projects/${harness.projectA}`,
+        headers,
+      });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body) as { id: number; archived: boolean };
+      expect(body.id).toBe(harness.projectA);
+      expect(body.archived).toBe(false);
+    },
+  );
+
+  it('the same token gets 403 on GET /projects/B, which has no archived flag to read', async () => {
+    const { headers } = seedAuth(harness.db, {
+      displayName: `router-read-${Math.random()}`,
+      scopes: ['read'],
+      projectId: harness.projectA,
+    });
+    const res = await harness.server.inject({
+      method: 'GET',
+      url: `/api/v1/projects/${harness.projectB}`,
+      headers,
+    });
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body)).not.toHaveProperty('archived');
+  });
+});
+
 describe('project binding — project-agnostic surfaces stay reachable', () => {
   it.each([
     ['/api/v1/me', 200],

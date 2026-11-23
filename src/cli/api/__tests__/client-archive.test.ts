@@ -109,6 +109,24 @@ describe('CLI client: archiveProject / unarchiveProject (WFT #2477)', () => {
     expect(project).toMatchObject({ id: 7, archived: false, archived_at: null });
   });
 
+  it('unarchiveProject keeps reevaluation_failed_task_ids from the response (WFT #2542)', async () => {
+    fetchSpy.mockResolvedValue(
+      jsonResponse({
+        ...archivedProject({
+          archived: false,
+          archived_at: null,
+          archived_by: null,
+          archive_reason: null,
+        }),
+        reevaluation_failed_task_ids: [12, 13],
+      }),
+    );
+
+    const project = await unarchiveProject(7);
+
+    expect(project.reevaluation_failed_task_ids).toEqual([12, 13]);
+  });
+
   it('listProjects sends the archived filter with the pagination (WFT #2478)', async () => {
     fetchSpy.mockResolvedValue(jsonResponse({ data: [], total: 0, limit: 10, offset: 0 }));
 

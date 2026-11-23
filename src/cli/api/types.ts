@@ -14,7 +14,10 @@
 
 import type { z } from 'zod';
 import type { TaskResponseSchema } from '../../api/routes/tasks/schemas.js';
-import type { ProjectResponseSchema } from '../../api/routes/projects/schemas.js';
+import type {
+  ProjectResponseSchema,
+  UnarchiveProjectClientResponseSchema,
+} from '../../api/routes/projects/schemas.js';
 import type { ArchivedFilter, ValueCharter } from '../../types/task.js';
 import type { ModelPolicy } from '../../schemas/model-policy.schema.js';
 import type { ScmCharter } from '../../schemas/scm-charter.schema.js';
@@ -35,6 +38,12 @@ export type TaskResponse = z.infer<typeof TaskResponseSchema>;
  * is derived above.
  */
 export type ProjectResponse = z.infer<typeof ProjectResponseSchema>;
+
+/**
+ * POST /projects/:id/unarchive response (WFT #2542): the project plus
+ * `reevaluation_failed_task_ids` (absent from servers older than #2542).
+ */
+export type UnarchiveProjectResponse = z.infer<typeof UnarchiveProjectClientResponseSchema>;
 
 export interface CreateTaskInput {
   title: string;

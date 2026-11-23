@@ -84,10 +84,11 @@ name cannot be reused without renaming after unarchive.
 **Unarchive leaves the project in the state it would have had** (WFT #2522).
 While a project is archived the workflow cascade skips its tasks, so after a
 forced archive a task can stay `blocked` although every blocker has finished,
-and a parent can stay open although every child is done. When an unarchive
-actually changes the project, the workflow engine — as a subscriber to
-`project.unarchived`, after the unarchive has committed — re-evaluates that
-project once, in one transaction:
+and a parent can stay open although every child is done. After an unarchive
+has committed, the unarchive call itself (`ProjectService.unarchiveProject`)
+has the workflow engine re-evaluate that project once. It is a direct call,
+not a subscriber to `project.unarchived`, so that the outcome can be returned
+to the caller (WFT #2542):
 
 - each `blocked` task that has at least one blocker, all of them `done`,
   becomes `open`;
@@ -100,8 +101,8 @@ These writes carry `source: 'workflow'` and emit the usual `task.updated` and
 task with an unfinished blocker, and a `blocked`, `backlogged` or `closed`
 parent are left alone. A task set to `blocked` by hand on top of blockers
 that were already all `done` is opened too: the pass cannot tell it from a
-task the archive held back (WFT #2532). The pass is idempotent, and a project
-archived again before the event is handled is skipped.
+task the archive held back (WFT #2532). The pass is idempotent, and does
+nothing to a project that is archived.
 
 Each candidate task is re-evaluated in its own transaction (WFT #2532). If its
 write fails, only that task's cascade rolls back and is logged with the task
@@ -109,8 +110,24 @@ and project ids; the other tasks still change, and the project stays
 unarchived. A repeated unarchive of a project that is not archived emits no
 event but runs the pass again, which is the retry path for a task that
 failed. The pass runs wherever the unarchive runs: REST, the remote bridge
-(through REST) and the stdio MCP server all build the app with the same
-`createApp`, which starts the workflow engine.
+(through REST), the stdio MCP server and Slack all reach the same
+`ProjectService`, which `createApp` binds to the workflow engine.
+
+**A partial failure is visible to the caller** (WFT #2542). The unarchive
+still succeeds (200), and its result names the tasks whose re-evaluation
+rolled back, in one shape on every surface: the project's fields plus
+`reevaluation_failed_task_ids: number[]`, empty on a clean pass.
+
+| Surface | Where the ids appear |
+| --- | --- |
+| REST `POST /projects/:id/unarchive` | `reevaluation_failed_task_ids` in the 200 body |
+| stdio and remote `unarchive_project` | the same field in `structuredContent`, and a warning line in the text |
+| CLI `tasks project-unarchive` | a warning on stderr (exit status stays 0); with `--json`, the field inside `project` |
+| Slack `/tasks project-unarchive` | a warning block |
+
+The warning names the tasks and says to unarchive again to retry them. A
+response from a server older than #2542 has no field; clients treat it as
+absent, not as "nothing failed".
 
 ### 2.5 Default visibility
 
@@ -231,7 +248,7 @@ remote twin fails), `tool-count-drift.test.ts` (project tools go 5 → 7),
 | `src/cli/commands/project-archive.ts`, `project-unarchive.ts` (new) | `tasks project-archive <id> [--reason <text>] [--with-unfinished]`, `tasks project-unarchive <id>`. Registered in `src/cli/bin/tasks.ts`. `--with-unfinished` sends `force: true` and requires `--reason` (refused before any request without one). |
 | `src/cli/commands/project-list.ts`, `list.ts` | `--include-archived`, `--archived-only`. |
 | `src/cli/commands/project-show.ts`, `src/cli/output/formatters.ts` | Show archived date, actor and reason. |
-| `src/cli/commands/completions.ts` | New commands and flags. |
+| `src/cli/commands/completions.ts` | New commands and flags. Bash offers only the flags each command declares, read from its Commander options, plus the global flags (WFT #2551); zsh lists flags per command by hand. `src/cli/__tests__/completions-unit.test.ts` runs the bash script in a real bash and checks its exit status, and runs the zsh script in a real zsh where one is installed. CI installs zsh and sets `WFT_REQUIRE_ZSH=1` so that test cannot skip there. |
 | `src/cli/statusline/resolve-project.ts`, `format-segment.ts` | Name auto-match ignores archived projects; an explicitly linked archived project renders with an `archived` marker. |
 
 Guards: `cli-surface-coverage-link` runs `--help` for every registered
@@ -271,7 +288,7 @@ Guards: `src/api/routes/tasks/__tests__/skill-enums.test.ts`;
 | File | Change |
 | --- | --- |
 | `src/config/event-types.ts` | Add the two event types. Guard: `src/events/__tests__/wft-router-event-types-sync.test.ts`. |
-| `src/dispatch/startup-sweep.ts` | A rule with a numeric `project:` queries `GET /tasks?project_id=N`, which by rule 2.5 still returns an archived project's tasks. The sweep must fetch the project once and skip it when archived. |
+| `src/dispatch/startup-sweep.ts` | A rule with a numeric `project:` queries `GET /tasks?project_id=N`, which by rule 2.5 still returns an archived project's tasks. The sweep must fetch the project once and skip it when archived. Rule for a failed lookup (WFT #2544): only a definite answer (2xx, `archived: true`) skips the rule. A 404, a 403, any other non-2xx, a transport error or an unparseable body logs `wft_router_sweep_project_lookup_failed` with the project id and the rule runs as before. Lookups, failed ones included, are cached per project per sweep: one cold-start sweep shares one cache across its rules, and each periodic tick starts a new one. A project-bound token can read its own project at the `read` tier and gets 403 for any other (pinned in `src/api/__tests__/pat-project-binding.test.ts`). |
 | `src/dispatch/predicate.ts`, `src/config/triggers-schema.ts` | No new `where:` key. Task events carry no archived flag and a frozen project emits no task events. |
 | `src/handlers/create-task-in-project.ts` | No code change: a 4xx is already non-retryable. Add a test for the 422. |
 | `triggers.example.yaml`, `README.md` | An example rule on `project.archived`. |

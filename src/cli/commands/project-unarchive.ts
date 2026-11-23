@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { unarchiveProject } from '../api/client.js';
-import { formatProjectDetail, colorError, colorSuccess } from '../output/formatters.js';
+import { formatProjectDetail, colorError, colorSuccess, colorWarn } from '../output/formatters.js';
+import { formatReevaluationFailures } from '../../mcp/lib/project-tool-definitions.js';
 import { handleError } from '../output/error-handler.js';
 import { jsonOutput } from '../output/json-output.js';
 import { parseProjectId } from './project-archive.js';
@@ -25,10 +26,17 @@ export const projectUnarchiveCommand = new Command('project-unarchive')
 
       const globalOpts = projectUnarchiveCommand.parent?.optsWithGlobals() || {};
       if (globalOpts['json']) {
+        // `project.reevaluation_failed_task_ids` carries any failures (WFT #2542).
         jsonOutput({ project });
       } else {
         console.log(colorSuccess(`Project #${id} unarchived`));
         console.log(formatProjectDetail(project));
+        // The unarchive succeeded, so the exit status stays 0; the tasks that
+        // kept their old state are named on stderr (WFT #2542).
+        const warning = formatReevaluationFailures(id, project.reevaluation_failed_task_ids);
+        if (warning) {
+          console.error(colorWarn(warning));
+        }
       }
     } catch (error) {
       handleError(error);

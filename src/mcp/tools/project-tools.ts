@@ -271,10 +271,15 @@ export function registerProjectTools(
     async (args) => {
       try {
         enforceToolScope(ctx.scopes, 'unarchive_project');
-        const project = projectService.unarchiveProject(args.id, resolveMcpActorName(ctx));
+        const { project, reevaluationFailedTaskIds } = projectService.unarchiveProject(
+          args.id,
+          resolveMcpActorName(ctx),
+        );
+        // Same shape as the REST body the remote bridge relays (WFT #2542).
+        const result = { ...project, reevaluation_failed_task_ids: reevaluationFailedTaskIds };
         return {
-          content: [{ type: 'text', text: formatUnarchiveResult(project) }],
-          structuredContent: toStructuredContent(project),
+          content: [{ type: 'text', text: formatUnarchiveResult(result) }],
+          structuredContent: toStructuredContent(result),
         };
       } catch (error) {
         throw convertToMcpError(error);

@@ -15,6 +15,13 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Command } from 'commander';
 import { createCompletionsCommand } from '../commands/completions.js';
 import { scmCommand } from '../commands/scm.js';
+import { listCommand } from '../commands/list.js';
+import { projectArchiveCommand } from '../commands/project-archive.js';
+
+/** True when a `zsh` binary is on PATH. */
+function hasZsh(): boolean {
+  return spawnSync('zsh', ['-c', 'exit 0']).status === 0;
+}
 
 describe('createCompletionsCommand', () => {
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
@@ -37,10 +44,9 @@ describe('createCompletionsCommand', () => {
       .command('create')
       .description('Create a task')
       .action(() => {});
-    program
-      .command('list')
-      .description('List tasks')
-      .action(() => {});
+    // The real `list` and `project-archive` commands, so the per-command flag
+    // lists come from their actual options (WFT #2551).
+    program.addCommand(listCommand);
     program
       .command('update')
       .description('Update a task')
@@ -48,6 +54,9 @@ describe('createCompletionsCommand', () => {
     // Register the real `scm` dispatcher (task #1536) so the derived command
     // list proves `scm` is a completion-visible subcommand.
     program.addCommand(scmCommand);
+    program.addCommand(projectArchiveCommand);
+    program.option('--json', 'Output as JSON');
+    program.option('--token <token>', 'Use the given PAT');
     program.addCommand(createCompletionsCommand(program));
   });
 
@@ -88,18 +97,26 @@ describe('createCompletionsCommand', () => {
       return consoleLogSpy.mock.calls[0][0] as string;
     }
 
-    /** Source the script, run _tasks_completions for `words`, return COMPREPLY + stderr. */
+    /**
+     * Source the script, run _tasks_completions for `words`, return COMPREPLY
+     * + stderr. Asserts bash exited 0 (WFT #2551): a script that errors out
+     * mid-function must fail here even if it printed nothing to stderr.
+     */
     function complete(script: string, words: string[]): { reply: string[]; stderr: string } {
       const dir = mkdtempSync(join(tmpdir(), 'tasks-completion-'));
       const file = join(dir, 'tasks-completion.bash');
       try {
         writeFileSync(file, script);
+        // `set -e`/`-u`/pipefail: an unset variable or a failing command in
+        // the completion function makes bash exit non-zero.
         const driver = [
+          'set -euo pipefail',
           'source "$1"; shift',
           'COMP_WORDS=("$@")',
           'COMP_CWORD=$(( ${#COMP_WORDS[@]} - 1 ))',
+          'COMPREPLY=()',
           '_tasks_completions',
-          'printf "%s\\n" "${COMPREPLY[@]}"',
+          'if (( ${#COMPREPLY[@]} > 0 )); then printf "%s\\n" "${COMPREPLY[@]}"; fi',
         ].join('\n');
         const result = spawnSync(
           'bash',
@@ -108,6 +125,8 @@ describe('createCompletionsCommand', () => {
             encoding: 'utf8',
           },
         );
+        expect(result.error).toBeUndefined();
+        expect(result.status, `bash exited ${String(result.status)}: ${result.stderr}`).toBe(0);
         return {
           reply: result.stdout.split('\n').filter((line) => line.length > 0),
           stderr: result.stderr,
@@ -139,6 +158,61 @@ describe('createCompletionsCommand', () => {
       expect(commands.reply).toEqual(['create']);
     });
 
+    // WFT #2551: bash offers only the flags the command accepts (plus the
+    // program's global flags), read from each command's own options.
+    describe('flags per command (WFT #2551)', () => {
+      it('list offers its own flags and the global ones, not project-archive flags', async () => {
+        const { reply, stderr } = complete(await bashScript(), ['tasks', 'list', '--']);
+        expect(stderr).toBe('');
+        for (const flag of [
+          '--status',
+          '--include-archived',
+          '--archived-only',
+          '--due-before',
+          '--json',
+          '--help',
+        ]) {
+          expect(reply).toContain(flag);
+        }
+        expect(reply).not.toContain('--reason');
+        expect(reply).not.toContain('--with-unfinished');
+      });
+
+      it('project-archive offers --reason and --with-unfinished, not list filters', async () => {
+        const { reply } = complete(await bashScript(), ['tasks', 'project-archive', '7', '--']);
+        expect(reply).toContain('--reason');
+        expect(reply).toContain('--with-unfinished');
+        expect(reply).toContain('--json');
+        expect(reply).not.toContain('--status');
+        expect(reply).not.toContain('--include-archived');
+      });
+
+      it('a command with no options of its own offers only the global flags', async () => {
+        const { reply } = complete(await bashScript(), ['tasks', 'update', '--']);
+        expect(reply).toContain('--json');
+        expect(reply).not.toContain('--status');
+        expect(reply).not.toContain('--reason');
+      });
+
+      it('finds the command after global flags, including one that takes a value', async () => {
+        const script = await bashScript();
+        const afterJson = complete(script, ['tasks', '--json', 'list', '--inc']);
+        expect(afterJson.reply).toEqual(['--include-archived']);
+        const afterToken = complete(script, ['tasks', '--token', 'abc', 'project-archive', '--wi']);
+        expect(afterToken.reply).toEqual(['--with-unfinished']);
+        const commandAfterJson = complete(script, ['tasks', '--json', 'cre']);
+        expect(commandAfterJson.reply).toEqual(['create']);
+      });
+
+      it('before any command, a flag completes to the global flags only', async () => {
+        const { reply } = complete(await bashScript(), ['tasks', '--']);
+        expect(reply).toContain('--json');
+        expect(reply).toContain('--token');
+        expect(reply).not.toContain('--status');
+        expect(reply).not.toContain('--with-unfinished');
+      });
+    });
+
     it('every compgen call ends its options with `-- "${cur}"`', async () => {
       const lines = (await bashScript()).split('\n').filter((line) => line.includes('compgen'));
       expect(lines.length).toBeGreaterThan(0);
@@ -147,6 +221,65 @@ describe('createCompletionsCommand', () => {
       }
     });
   });
+
+  // WFT #2551: the zsh script is executed, not only string-matched. zsh is not
+  // on every developer host, so this runs where zsh exists; CI installs zsh
+  // and sets WFT_REQUIRE_ZSH=1, which makes a missing zsh a failure there
+  // instead of a silent skip.
+  describe.runIf(hasZsh() || process.env.WFT_REQUIRE_ZSH === '1')(
+    'the generated zsh completion runs in a real zsh (WFT #2551)',
+    () => {
+      /**
+       * Source the script with `_arguments` / `_describe` stubbed to print
+       * their specs, and `words` set as compsys would after the command
+       * word. Returns the printed specs; asserts zsh exited 0.
+       */
+      async function zshSpecs(words: string[]): Promise<string[]> {
+        consoleLogSpy.mockClear();
+        await program.parseAsync(['node', 'tasks', 'completions', 'zsh']);
+        const script = consoleLogSpy.mock.calls[0][0] as string;
+        const dir = mkdtempSync(join(tmpdir(), 'tasks-completion-zsh-'));
+        const file = join(dir, '_tasks');
+        try {
+          writeFileSync(file, script);
+          const driver = [
+            'setopt err_exit no_unset',
+            'file="$1"; shift',
+            'words=("$@")',
+            'state=',
+            '_arguments() { if [[ "$1" == "-C" ]]; then state=args; return 0; fi; print -rl -- "$@"; }',
+            '_describe() { print -rl -- "${(@P)2}"; }',
+            'source "$file"',
+          ].join('\n');
+          const result = spawnSync('zsh', ['-f', '-c', driver, 'zsh', file, ...words], {
+            encoding: 'utf8',
+          });
+          expect(result.error).toBeUndefined();
+          expect(result.status, `zsh exited ${String(result.status)}: ${result.stderr}`).toBe(0);
+          expect(result.stderr).toBe('');
+          return result.stdout.split('\n').filter((line) => line.length > 0);
+        } finally {
+          rmSync(dir, { recursive: true, force: true });
+        }
+      }
+
+      it('list offers the archived filters and no archive flags', async () => {
+        const specs = await zshSpecs(['list', '--']);
+        expect(specs.some((s) => s.startsWith('--include-archived['))).toBe(true);
+        expect(specs.some((s) => s.startsWith('--status['))).toBe(true);
+        expect(specs.some((s) => s.startsWith('--json['))).toBe(true);
+        expect(specs.some((s) => s.startsWith('--reason['))).toBe(false);
+        expect(specs.some((s) => s.startsWith('--with-unfinished['))).toBe(false);
+      });
+
+      it('project-archive offers --reason and --with-unfinished', async () => {
+        const specs = await zshSpecs(['project-archive', '7', '--']);
+        expect(specs.some((s) => s.startsWith('--reason['))).toBe(true);
+        expect(specs.some((s) => s.startsWith('--with-unfinished['))).toBe(true);
+        expect(specs.some((s) => s.startsWith('--include-archived['))).toBe(false);
+      });
+    },
+  );
 
   it('emits a bash completion script containing all registered subcommands', async () => {
     await program.parseAsync(['node', 'tasks', 'completions', 'bash']);

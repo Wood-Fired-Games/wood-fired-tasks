@@ -52,6 +52,29 @@ export const ProjectResponseSchema = z.object({
   archive_reason: z.string().nullable().optional(),
 });
 
+/**
+ * POST /projects/:id/unarchive response (WFT #2542): the project plus the
+ * ids of the tasks whose unarchive re-evaluation rolled back. Empty on a
+ * clean pass. A non-empty list means the unarchive succeeded but those tasks
+ * kept their old state; unarchiving again retries them.
+ */
+export const UnarchiveProjectResponseSchema = ProjectResponseSchema.extend({
+  reevaluation_failed_task_ids: z
+    .array(z.number().int())
+    .describe(
+      'Tasks whose re-evaluation after the unarchive rolled back and kept their old state. ' +
+        'Empty on a clean pass. Unarchive again to retry them.',
+    ),
+});
+
+/**
+ * Client-side parse of the unarchive response: `reevaluation_failed_task_ids`
+ * is optional so a response from a server older than WFT #2542 still parses.
+ */
+export const UnarchiveProjectClientResponseSchema = ProjectResponseSchema.extend({
+  reevaluation_failed_task_ids: z.array(z.number().int()).optional(),
+});
+
 export const ProjectListResponseSchema = z.array(ProjectResponseSchema);
 
 /**

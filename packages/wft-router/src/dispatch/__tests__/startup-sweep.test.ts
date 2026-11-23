@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { TriggersRule } from '../../config/triggers-schema.js';
 import {
+  createProjectLookupCache,
   findFirstMatchingOpenTask,
   sweepEventId,
   taskRowToEventPayload,
@@ -247,15 +248,168 @@ describe('findFirstMatchingOpenTask', () => {
     expect(new URL(calls[0] as string).pathname).toBe('/api/v1/tasks');
   });
 
-  it('throws when the project lookup is non-2xx so the caller can isolate the rule', async () => {
-    const calls: string[] = [];
-    const fetchImpl = pagedFetch({}, calls, {});
-    await expect(
-      findFirstMatchingOpenTask(rule({ where: { project: 9 } } as Partial<TriggersRule>), {
+  // WFT #2544, the stated rule: only a definite "archived" answer skips the
+  // rule. A failed lookup is reported through `onProjectLookupFailed` and the
+  // rule runs as it did before the archive check existed.
+  describe('a failed project lookup is not "archived" (WFT #2544)', () => {
+    const backlog = { '0': { data: [{ id: 1, project_id: 9, status: 'open' }], total: 1 } };
+
+    it.each([
+      ['404 (deleted project)', 404, /HTTP 404/],
+      ['403 (token bound to another project)', 403, /HTTP 403/],
+      ['503', 503, /HTTP 503/],
+    ] as const)(
+      'on %s it reports the failure and runs the rule',
+      async (_label, status, pattern) => {
+        const calls: string[] = [];
+        const tasks = pagedFetch(backlog, calls);
+        const fetchImpl = (async (input: RequestInfo | URL): Promise<Response> => {
+          if (new URL(String(input)).pathname === '/api/v1/projects/9') {
+            calls.push(String(input));
+            return new Response('{}', { status });
+          }
+          return tasks(input);
+        }) as typeof fetch;
+        const failures: Array<{ projectId: number; error: string }> = [];
+
+        const match = await findFirstMatchingOpenTask(
+          rule({ where: { project: 9 } } as Partial<TriggersRule>),
+          { ...OPTS, fetchImpl, onProjectLookupFailed: (f) => failures.push(f) },
+        );
+
+        expect(match?.payload.task?.id).toBe(1);
+        expect(failures).toHaveLength(1);
+        expect(failures[0]?.projectId).toBe(9);
+        expect(failures[0]?.error).toMatch(pattern);
+        expect(calls.map((c) => new URL(c).pathname)).toEqual([
+          '/api/v1/projects/9',
+          '/api/v1/tasks',
+        ]);
+      },
+    );
+
+    it('on a transport error it reports the failure and runs the rule', async () => {
+      const tasks = pagedFetch(backlog, []);
+      const fetchImpl = (async (input: RequestInfo | URL): Promise<Response> => {
+        if (new URL(String(input)).pathname.startsWith('/api/v1/projects/')) {
+          throw new TypeError('fetch failed: ECONNREFUSED');
+        }
+        return tasks(input);
+      }) as typeof fetch;
+      const failures: Array<{ projectId: number; error: string }> = [];
+
+      const match = await findFirstMatchingOpenTask(
+        rule({ where: { project: 9 } } as Partial<TriggersRule>),
+        { ...OPTS, fetchImpl, onProjectLookupFailed: (f) => failures.push(f) },
+      );
+
+      expect(match?.payload.task?.id).toBe(1);
+      expect(failures).toHaveLength(1);
+    });
+
+    it('on unparseable JSON it reports the failure and runs the rule', async () => {
+      const tasks = pagedFetch(backlog, []);
+      const fetchImpl = (async (input: RequestInfo | URL): Promise<Response> => {
+        if (new URL(String(input)).pathname.startsWith('/api/v1/projects/')) {
+          return new Response('{not json', { status: 200 });
+        }
+        return tasks(input);
+      }) as typeof fetch;
+      const failures: Array<{ projectId: number; error: string }> = [];
+
+      const match = await findFirstMatchingOpenTask(
+        rule({ where: { project: 9 } } as Partial<TriggersRule>),
+        { ...OPTS, fetchImpl, onProjectLookupFailed: (f) => failures.push(f) },
+      );
+
+      expect(match?.payload.task?.id).toBe(1);
+      expect(failures[0]?.error).toMatch(/unparseable/);
+    });
+
+    it('a failure without a reporter still runs the rule (never throws)', async () => {
+      const fetchImpl = pagedFetch(backlog, [], {});
+      const match = await findFirstMatchingOpenTask(
+        rule({ where: { project: 9 } } as Partial<TriggersRule>),
+        { ...OPTS, fetchImpl },
+      );
+      expect(match?.payload.task?.id).toBe(1);
+    });
+  });
+
+  describe('one project lookup per project per sweep (WFT #2544)', () => {
+    it('rules sharing a lookup cache fetch each project once', async () => {
+      const calls: string[] = [];
+      const fetchImpl = pagedFetch(
+        { '0': { data: [{ id: 1, project_id: 5, status: 'open' }], total: 1 } },
+        calls,
+        { '5': { id: 5, archived: false }, '6': { id: 6, archived: true } },
+      );
+      const projectLookups = createProjectLookupCache();
+      const opts = { ...OPTS, fetchImpl, projectLookups };
+
+      await findFirstMatchingOpenTask(
+        rule({ name: 'a', where: { project: 5 } } as Partial<TriggersRule>),
+        opts,
+      );
+      await findFirstMatchingOpenTask(
+        rule({ name: 'b', where: { project: 5 } } as Partial<TriggersRule>),
+        opts,
+      );
+      await findFirstMatchingOpenTask(
+        rule({ name: 'c', where: { project: 6 } } as Partial<TriggersRule>),
+        opts,
+      );
+      await findFirstMatchingOpenTask(
+        rule({ name: 'd', where: { project: 6 } } as Partial<TriggersRule>),
+        opts,
+      );
+
+      const lookups = calls.filter((c) => new URL(c).pathname.startsWith('/api/v1/projects/'));
+      expect(lookups.map((c) => new URL(c).pathname)).toEqual([
+        '/api/v1/projects/5',
+        '/api/v1/projects/6',
+      ]);
+    });
+
+    it('a failed lookup is cached for the sweep too, and reported once', async () => {
+      const calls: string[] = [];
+      const fetchImpl = pagedFetch({ '0': { data: [], total: 0 } }, calls, {});
+      const failures: Array<{ projectId: number; error: string }> = [];
+      const opts = {
         ...OPTS,
         fetchImpl,
-      }),
-    ).rejects.toThrow(/project lookup returned HTTP 404/);
+        projectLookups: createProjectLookupCache(),
+        onProjectLookupFailed: (f: { projectId: number; error: string }) => failures.push(f),
+      };
+
+      await findFirstMatchingOpenTask(
+        rule({ name: 'a', where: { project: 9 } } as Partial<TriggersRule>),
+        opts,
+      );
+      await findFirstMatchingOpenTask(
+        rule({ name: 'b', where: { project: 9 } } as Partial<TriggersRule>),
+        opts,
+      );
+
+      expect(calls.filter((c) => c.includes('/api/v1/projects/9'))).toHaveLength(1);
+      expect(failures).toHaveLength(1);
+    });
+
+    it('without a shared cache each call looks the project up afresh', async () => {
+      const calls: string[] = [];
+      const fetchImpl = pagedFetch({ '0': { data: [], total: 0 } }, calls, {
+        '5': { id: 5, archived: false },
+      });
+      await findFirstMatchingOpenTask(rule({ where: { project: 5 } } as Partial<TriggersRule>), {
+        ...OPTS,
+        fetchImpl,
+      });
+      await findFirstMatchingOpenTask(rule({ where: { project: 5 } } as Partial<TriggersRule>), {
+        ...OPTS,
+        fetchImpl,
+      });
+      expect(calls.filter((c) => c.includes('/api/v1/projects/5'))).toHaveLength(2);
+    });
   });
 
   it('throws on a non-2xx response so the caller can isolate the rule', async () => {

@@ -477,7 +477,10 @@ describe('WorkflowEngine: unarchive re-evaluates the project', () => {
 
       expect(status(failing.id)).toBe('open');
       expect(projectEvents).toEqual([]);
-      expect(returned).toMatchObject({ id: archivedProjectId, archived: false });
+      expect(returned).toMatchObject({
+        project: { id: archivedProjectId, archived: false },
+        reevaluationFailedTaskIds: [],
+      });
       const statusChanges = seen.filter((s) => s.type === 'task.status_changed');
       expect(statusChanges).toHaveLength(1);
       expect(statusChanges[0].event.metadata).toMatchObject({
@@ -485,6 +488,53 @@ describe('WorkflowEngine: unarchive re-evaluates the project', () => {
         from: 'blocked',
         to: 'open',
       });
+    });
+
+    it('unarchiveProject returns the task ids whose re-evaluation failed, on the real unarchive and on the retry (WFT #2542)', () => {
+      const blocker = createTask('Blocker', liveProjectId);
+      const failing = createTask('Failing dependent', archivedProjectId);
+      const healthy = createTask('Healthy dependent', archivedProjectId);
+      block(blocker.id, failing.id);
+      block(blocker.id, healthy.id);
+      forceArchive();
+      finish(blocker.id);
+
+      const spy = failUpdatesOf(failing.id);
+      const first = app.projectService.unarchiveProject(archivedProjectId, 'tester');
+      expect(first.project).toMatchObject({ id: archivedProjectId, archived: false });
+      expect(first.reevaluationFailedTaskIds).toEqual([failing.id]);
+      expect(status(healthy.id)).toBe('open');
+
+      // Still failing: the repeated (no-op) unarchive reports it again.
+      const stillFailing = app.projectService.unarchiveProject(archivedProjectId, 'tester');
+      expect(stillFailing.reevaluationFailedTaskIds).toEqual([failing.id]);
+      spy.mockRestore();
+
+      const retried = app.projectService.unarchiveProject(archivedProjectId, 'tester');
+      expect(retried.reevaluationFailedTaskIds).toEqual([]);
+      expect(status(failing.id)).toBe('open');
+    });
+
+    it('a project.unarchived event on its own does not run the pass: the unarchive call runs it, once (WFT #2542)', () => {
+      const blocker = createTask('Blocker', liveProjectId);
+      const dependent = createTask('Dependent', archivedProjectId);
+      block(blocker.id, dependent.id);
+      forceArchive();
+      finish(blocker.id);
+      const passes = vi.spyOn(app.workflowEngine, 'reevaluateProject');
+
+      app.projectService.unarchiveProject(archivedProjectId, 'tester');
+      expect(passes).toHaveBeenCalledTimes(1);
+      expect(status(dependent.id)).toBe('open');
+
+      eventBus.emit('project.unarchived', {
+        eventType: 'project.unarchived',
+        timestamp: new Date().toISOString(),
+        data: app.projectService.getProject(archivedProjectId),
+        metadata: { source: 'user', actor: 'tester' },
+      });
+      expect(passes).toHaveBeenCalledTimes(1);
+      passes.mockRestore();
     });
 
     it('reevaluateProject reports the task ids that failed, and none on a clean pass', () => {

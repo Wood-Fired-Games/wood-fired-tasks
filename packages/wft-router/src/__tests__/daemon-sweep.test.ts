@@ -344,3 +344,76 @@ describe('WftRouterDaemon — cold-start sweep (task #1005)', () => {
     store.close();
   });
 });
+
+describe('WftRouterDaemon — the sweep project lookup (WFT #2544)', () => {
+  function twoRulesOnProject5(): TriggersConfig {
+    const base = sweepConfig().rules[0] as unknown as Record<string, unknown>;
+    return {
+      version: 1,
+      rules: [
+        { ...base, name: 'wake-a' },
+        { ...base, name: 'wake-b' },
+      ],
+    } as unknown as TriggersConfig;
+  }
+
+  it('one cold-start sweep looks project 5 up once for two rules', async () => {
+    const store = new IdempotencyStore({ dbPath: ':memory:' });
+    const record: KickRecord = { kicks: [], suppressed: [] };
+    const calls: string[] = [];
+    const daemon = sweepDaemon({
+      config: twoRulesOnProject5(),
+      store,
+      record,
+      fetchImpl: taskListFetch(OPEN_BACKLOG, calls),
+      now: () => 10_000_000,
+    });
+    await runOnce(daemon);
+
+    expect(calls.filter((u) => u.includes('/api/v1/projects/5'))).toHaveLength(1);
+    expect(calls.filter((u) => u.includes('/api/v1/tasks?'))).toHaveLength(2);
+    expect(record.kicks).toEqual(['sweep:wake-a:166', 'sweep:wake-b:166']);
+    store.close();
+  });
+
+  it('a failed lookup logs one WARN naming the project, and the rules still dispatch', async () => {
+    const store = new IdempotencyStore({ dbPath: ':memory:' });
+    const record: KickRecord = { kicks: [], suppressed: [] };
+    const tasks = taskListFetch(OPEN_BACKLOG, []);
+    const fetchImpl = (async (input: RequestInfo | URL): Promise<Response> => {
+      if (new URL(String(input)).pathname.startsWith('/api/v1/projects/')) {
+        return new Response(JSON.stringify({ error: 'forbidden' }), { status: 403 });
+      }
+      return tasks(input);
+    }) as typeof fetch;
+    const warnings: Array<{ fields: Record<string, unknown>; msg: string }> = [];
+    const daemon = new WftRouterDaemon({
+      config: twoRulesOnProject5(),
+      store,
+      sseSource: emptySSESource(),
+      handlers: claimingRegistry(record),
+      logger: {
+        info: () => undefined,
+        warn: (fields: Record<string, unknown>, msg: string) => {
+          warnings.push({ fields, msg });
+        },
+        error: () => undefined,
+      } as DaemonDeps['logger'],
+      apiBaseUrl: 'https://api.test',
+      apiKey: 'wft_pat_sweep',
+      fetchImpl,
+      now: () => 10_000_000,
+    });
+    await runOnce(daemon);
+
+    const lookupWarnings = warnings.filter(
+      (w) => w.msg === 'wft_router_sweep_project_lookup_failed',
+    );
+    expect(lookupWarnings).toHaveLength(1);
+    expect(lookupWarnings[0]?.fields).toMatchObject({ project_id: 5 });
+    expect(String(lookupWarnings[0]?.fields['error'])).toContain('HTTP 403');
+    expect(warnings.filter((w) => w.msg === 'wft_router_sweep_failed')).toHaveLength(0);
+    expect(record.kicks).toEqual(['sweep:wake-a:166', 'sweep:wake-b:166']);
+    store.close();
+  });
+});

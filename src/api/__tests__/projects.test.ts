@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { createServer } from '../server.js';
+import type { App } from '../../index.js';
 import type { FastifyInstance } from 'fastify';
 import type Database from '../../db/driver.js';
 import { authHeaders } from './helpers/auth.js';
@@ -257,12 +258,14 @@ describe('Project CRUD Routes', () => {
  */
 describe('Project archive routes', () => {
   let server: FastifyInstance;
+  let app: App;
   let db: Database.Database;
   let headers: { Authorization: string };
 
   beforeAll(async () => {
     const result = await createServer({ dbPath: ':memory:' });
     server = result.server;
+    app = result.app;
     db = result.app.db;
     headers = authHeaders(db, { displayName: 'archiver-alice' });
   });
@@ -429,6 +432,67 @@ describe('Project archive routes', () => {
     const again = await post(`/api/v1/projects/${id}/unarchive`);
     expect(again.statusCode).toBe(200);
     expect(JSON.parse(again.body).archived).toBe(false);
+    // A clean pass names no task (WFT #2542).
+    expect(body.reevaluation_failed_task_ids).toEqual([]);
+    expect(JSON.parse(again.body).reevaluation_failed_task_ids).toEqual([]);
+  });
+
+  it('a task whose re-evaluation fails is named in reevaluation_failed_task_ids; a retry clears it (WFT #2542)', async () => {
+    const liveId = await createProject('unarchive-partial-live');
+    const id = await createProject('unarchive-partial');
+    const blockerId = await createTask(liveId);
+    const failingId = await createTask(id);
+    const healthyId = await createTask(id);
+    for (const dependent of [failingId, healthyId]) {
+      const edge = await post(`/api/v1/tasks/${blockerId}/dependencies`, {
+        blocks_task_id: dependent,
+      });
+      expect(edge.statusCode).toBe(201);
+      const res = await server.inject({
+        method: 'PUT',
+        url: `/api/v1/tasks/${dependent}`,
+        headers,
+        payload: { status: 'blocked' },
+      });
+      expect(res.statusCode).toBe(200);
+    }
+    expect(
+      (await post(`/api/v1/projects/${id}/archive`, { force: true, reason: 'paused' })).statusCode,
+    ).toBe(200);
+    for (const status of ['in_progress', 'done']) {
+      const res = await server.inject({
+        method: 'PUT',
+        url: `/api/v1/tasks/${blockerId}`,
+        headers,
+        payload: { status },
+      });
+      expect(res.statusCode).toBe(200);
+    }
+
+    const original = app.taskService.updateTask.bind(app.taskService);
+    const spy = vi
+      .spyOn(app.taskService, 'updateTask')
+      .mockImplementation((taskId: number, ...rest: unknown[]) => {
+        if (taskId === failingId) {
+          throw new Error(`simulated write failure on task ${taskId}`);
+        }
+        return (original as (...args: unknown[]) => ReturnType<typeof original>)(taskId, ...rest);
+      });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const partial = await post(`/api/v1/projects/${id}/unarchive`);
+      expect(partial.statusCode).toBe(200);
+      const body = JSON.parse(partial.body);
+      expect(body.archived).toBe(false);
+      expect(body.reevaluation_failed_task_ids).toEqual([failingId]);
+    } finally {
+      spy.mockRestore();
+      errorSpy.mockRestore();
+    }
+
+    const retried = await post(`/api/v1/projects/${id}/unarchive`);
+    expect(retried.statusCode).toBe(200);
+    expect(JSON.parse(retried.body).reevaluation_failed_task_ids).toEqual([]);
   });
 
   it('unarchive returns 404 for a project that does not exist', async () => {
