@@ -253,6 +253,7 @@ const DOC_ALLOWLIST_CLASSES: ReadonlyArray<{ description: string; paths: readonl
       'docs/superpowers/specs/2026-06-10-guaranteed-task-sizing-design.md',
       'docs/superpowers/specs/2026-07-16-pluggable-scm-design.md',
       'docs/superpowers/specs/2026-07-17-pluggable-scm-hardening.md',
+      'docs/design/project-archived-state.md',
     ],
   },
   {
@@ -279,6 +280,7 @@ const DOC_ALLOWLIST_CLASSES: ReadonlyArray<{ description: string; paths: readonl
       '(tracked) is the live index that links out to them.',
     paths: [
       'docs/AGENT_READINESS_AUDIT.md',
+      'docs/RELEASING-verified.md',
       'docs/ASYNC_PROMISE_LINTING.md',
       'docs/TYPESCRIPT_QUALITY_AUDIT_2026.md',
       'docs/WINDOWS_CHILD_PROCESS_AUDIT.md',
