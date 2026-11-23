@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-11-23T23:39:54.834Z",
+    "generated_at": "2026-11-23T23:59:29.165Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -63,8 +63,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 7600,
-      "actual_lines": 374,
-      "sha256": "0044bdae0e8170c7eb940831ff688a746125e0f4ea57145ff6ce7eb2cecf1efc",
+      "actual_lines": 375,
+      "sha256": "1cfedf4e927edbc056b8d7ea3499cf2cfca61ea00e33de902999c9c05089ae98",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -121,8 +121,8 @@
       "status": "present",
       "notes": "Advisory budget — currently exceeds the contract target; tighten in a follow-up.",
       "approx_token_budget": 34600,
-      "actual_lines": 1724,
-      "sha256": "5a7f62df5b0dec2c030d61e9c330823de12ba9032245068efd100dcef922f31c"
+      "actual_lines": 1727,
+      "sha256": "54e6f5e2f9c2a0315fa7ef41c2a56bc24fe89da59979b891214e55b6c0280929"
     },
     {
       "path": "docs/MCP.md",
@@ -135,8 +135,8 @@
       "status": "present",
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 30000,
-      "actual_lines": 1406,
-      "sha256": "ed17beeb6e377bd014160cc420cef583f8d61e182d0d270acf52ae906109df3f"
+      "actual_lines": 1408,
+      "sha256": "e471f20f8f49476b84d0c1774e2627f08f91d3fd7f85013b98fff6ee56e56f2a"
     },
     {
       "path": "docs/CLI.md",

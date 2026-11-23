@@ -20,7 +20,8 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 ### Added
 - **Archived project state.** A finished project can be archived instead of
   deleted: it stays readable by id, leaves default listings and refuses every
-  write except comments (422 `project_archived`) until it is unarchived.
+  write except comments and deleting the project (422 `project_archived`)
+  until it is unarchived.
   - REST `POST /api/v1/projects/:id/archive` (body `{reason?, force?}`) and
     `POST /api/v1/projects/:id/unarchive`, `write` scope; a project-bound
     token may archive only its own project.
@@ -47,9 +48,9 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
   finished meanwhile are opened and parents whose children are all done are
   completed. The result carries `reevaluation_failed_task_ids` on REST, both
   MCP transports, the CLI and Slack; the CLI exits 0 and warns on stderr
-  when it is non-empty. A repeated unarchive retries only those tasks, and
-  only within the same server process; after a restart, archive and
-  unarchive again.
+  when it is non-empty. A repeated unarchive retries only those tasks (or
+  finishes a pass a thrown query left unfinished), and only within the same
+  server process; after a restart, archive and unarchive again.
 
 ### Changed
 - **`wft-router` sweeps skip archived projects.** A rule with a numeric

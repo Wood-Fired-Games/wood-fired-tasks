@@ -5279,7 +5279,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
               "application/json": {
                 "schema": {
                   "additionalProperties": false,
-                  "description": "Invalid id or body; \`force: true\` without a \`reason\` opens its message with \`archive_reason_required\`.",
+                  "description": "Invalid id or body; \`force: true\` without a \`reason\` has a message that contains \`archive_reason_required\`.",
                   "properties": {
                     "details": {},
                     "error": {
@@ -5297,7 +5297,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                 },
               },
             },
-            "description": "Invalid id or body; \`force: true\` without a \`reason\` opens its message with \`archive_reason_required\`.",
+            "description": "Invalid id or body; \`force: true\` without a \`reason\` has a message that contains \`archive_reason_required\`.",
           },
           "404": {
             "content": {

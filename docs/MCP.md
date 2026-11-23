@@ -803,7 +803,9 @@ that is not archived returns it unchanged.
 re-evaluation rolled back and kept their old state (empty on a clean pass); the
 text then carries a warning line naming them. Call `unarchive_project` again to
 retry them. That repeat call does not re-run the whole re-evaluation: it only
-retries the tasks that failed earlier in the same server process, so after a
+retries the tasks that failed earlier in the same server process (or finishes
+a pass an earlier thrown query left unfinished; see
+[design §2.4](design/project-archived-state.md#24-unarchive)), so after a
 server restart it retries nothing and reports nothing. The way out then is to
 archive the project again (`force` and a `reason` if it has unfinished tasks)
 and unarchive it. If a remote server is older than this client and its

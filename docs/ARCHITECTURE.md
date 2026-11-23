@@ -104,14 +104,15 @@ REST API. Remote MCP (`src/mcp/remote/`) is the same pattern. Local MCP
    `archived_by`, `archive_reason` (migration 021). Emits `project.archived`
    / `project.unarchived` once per real transition, never `project.updated`.
 3. While archived, `assertProjectWritable` (`src/services/project-write-guard.ts`)
-   makes `TaskService`, `DependencyService` and `WsjfRescoreService` refuse
-   writes with 422 `project_archived`; `ProjectService.updateProject` refuses
-   too. Comments and project deletion stay allowed. The `WorkflowEngine`
+   makes `TaskService` and `DependencyService` refuse writes with 422
+   `project_archived`; `WsjfRescoreService` and `ProjectService.updateProject`
+   throw the same error (`projectArchivedError`) themselves. Comments and project deletion stay allowed. The `WorkflowEngine`
    cascade skips targets in an archived project instead of failing.
 4. After an unarchive commits, `ProjectService.unarchiveProject` calls
    `WorkflowEngine.reevaluateProject` directly (one transaction per task);
    a repeat unarchive calls `retryFailedTasks`, which retries only the ids
-   remembered in memory. Rules: [design §2.4](design/project-archived-state.md#24-unarchive).
+   remembered in memory, or runs the full pass if the last one was left
+   unfinished by a thrown candidate query. Rules: [design §2.4](design/project-archived-state.md#24-unarchive).
 
 ### WSJF scoring / ranking
 

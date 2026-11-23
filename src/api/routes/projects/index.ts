@@ -91,7 +91,7 @@ const projectRoutes: FastifyPluginAsyncZod = async (fastify) => {
         response: {
           200: ProjectResponseSchema,
           400: ErrorResponseSchema.describe(
-            'Invalid id or body; `force: true` without a `reason` opens its message with ' +
+            'Invalid id or body; `force: true` without a `reason` has a message that contains ' +
               '`archive_reason_required`.',
           ),
           404: ErrorResponseSchema.describe('No project with this id.'),

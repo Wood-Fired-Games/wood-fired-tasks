@@ -495,8 +495,11 @@ means "unknown", not "nothing failed".
 
 Unarchiving a project that is not archived returns it unchanged, sends no
 event and does **not** re-run the pass: it only retries tasks that failed
-earlier **in this server process**. After a restart nothing is remembered;
-archive and unarchive again instead. Full rules:
+earlier **in this server process**, or finishes a pass that a thrown candidate
+query left unfinished. That throw answers the first unarchive with a 5xx
+although the unarchive has committed; the next unarchive finishes the pass.
+After a restart nothing is remembered; archive and unarchive again instead.
+Project names stay unique while archived. Full rules:
 [design §2.4](design/project-archived-state.md#24-unarchive).
 
 | Status | When |
