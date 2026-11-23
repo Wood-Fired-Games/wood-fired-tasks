@@ -22,7 +22,7 @@ These options work with any command:
 |--------|-------------|
 | --json | Output in machine-readable JSON format (writes to stdout, errors to stderr) |
 | --no-input | Disable interactive prompts (fail if required options are missing) |
-| --force | Skip confirmation prompts for destructive operations. It only skips prompts: it never forces an archive (that is `project-archive --with-unfinished`). |
+| --force | Skip confirmation prompts for destructive operations. It never forces an archive: that is `tasks project-archive <id> --with-unfinished`, which requires `--reason <text>` (archive details: [API.md](API.md#post-apiv1projectsidarchive)). |
 
 **Examples:**
 
@@ -263,10 +263,6 @@ tasks list --project 1 --status in_progress --assignee bob
 | --tags | | string | Filter by tags (comma-separated) |
 | --due-before | | string | Tasks due before date (ISO8601) |
 | --due-after | | string | Tasks due after date (ISO8601) |
-| --include-archived | | flag | Also list tasks of archived projects (they are hidden by default) |
-| --archived-only | | flag | List only tasks of archived projects |
-
-With `--project <id>` the project's tasks are listed even if it is archived.
 
 **Output:**
 
@@ -456,23 +452,13 @@ tasks project-create \
 
 ### tasks project-list
 
-List projects. Archived projects are hidden unless asked for; an archived
-project shown with `--include-archived` is marked `[archived]` after its name.
+List projects. Archived projects are hidden unless `--include-archived` (or `--archived-only`) is given.
 
 **Example:**
 
 ```bash
 tasks project-list
 ```
-
-**Options:**
-
-| Option | Type | Description |
-|--------|------|-------------|
-| --include-archived | flag | Also list archived projects |
-| --archived-only | flag | List only archived projects |
-| --limit | number | Max rows to return (default 50, max 500) |
-| --offset | number | Zero-based offset for pagination (default 0) |
 
 **Output:**
 
@@ -511,9 +497,6 @@ Created: 2026-02-14T12:00:00.000Z
 Updated: 2026-02-14T12:00:00.000Z
 ```
 
-An archived project also shows an `Archived:` line with the date, who
-archived it and the reason.
-
 ### tasks project-update <id>
 
 Update a project.
@@ -548,36 +531,6 @@ tasks project-delete 1
 Are you sure you want to delete project #1? (y/N): y
 Project #1 deleted successfully
 ```
-
-### tasks project-archive <id>
-
-Archive a finished project instead of deleting it: it leaves default listings
-and becomes read-only until unarchived (what that means:
-[API.md, Archived projects](API.md#archived-projects)). Needs the `write` scope.
-
-```bash
-tasks project-archive 7 --with-unfinished --reason "Abandoned; tracked in project 9"
-```
-
-| Option | Short | Type | Description |
-|--------|-------|------|-------------|
-| --reason | -r | string | Why the project is archived (1-500 characters; required with `--with-unfinished`) |
-| --with-unfinished | | flag | Archive although tasks are unfinished; task statuses are not changed. Without `--reason` the command exits 1 before sending anything. |
-
-Without `--with-unfinished`, a project with `open`, `in_progress`, `blocked`
-or `backlogged` tasks is refused: the command prints the count per status and
-exits 1. The global `--force` only skips prompts and never forces an archive.
-**JSON output:** the project is under `.data.project`.
-
-### tasks project-unarchive <id>
-
-Return an archived project to normal use; the server then re-evaluates its
-held-back tasks ([API.md](API.md#post-apiv1projectsidunarchive)). If some
-could not be re-evaluated, the command still exits 0 and prints a warning on
-stderr naming them; running it again retries them, but only until the server
-restarts. A note on stderr that the server did not report the result (an
-older server) means "unknown", not "nothing failed". Under `--json` nothing is
-printed on stderr: read `reevaluation_failed_task_ids` in `.data.project`.
 
 ## Model Commands
 
@@ -1919,12 +1872,6 @@ echo 'fpath=(~/.zsh/completions $fpath)' >> ~/.zshrc
 
 After restarting your shell (or `source ~/.bashrc` / `compinit` for zsh), pressing TAB after `tasks ` will complete command names. Pressing TAB after `--status ` or `--priority ` will complete valid enum values.
 
-Flag completion is per command: after `tasks <command> --`, only that
-command's own flags and the global flags are offered (for example
-`--with-unfinished` only after `project-archive`). For a command with
-subcommands (`db`, `docs`, `service`, `models`), bash completes the
-subcommand name and then that subcommand's own flags.
-
 **Arguments:**
 
 | Argument | Type | Description |
@@ -1943,6 +1890,7 @@ This command does not honor `--json` — it always emits the raw shell script on
 |------|---------|
 | 0 | Success |
 | 1 | Error (validation, API error, connection error) |
+| 0 | `tasks project-unarchive <id>` when some tasks failed re-evaluation: a warning on stderr names them, not under `--json` ([API.md](API.md#post-apiv1projectsidunarchive)) |
 
 ## Tips
 
