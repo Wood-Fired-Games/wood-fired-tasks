@@ -119,11 +119,13 @@ Bare `/tasks` (or `/tasks help`) prints the help block. All responses are
 
 | Command | Description |
 |---------|-------------|
-| `/tasks project-list` | List all projects. |
+| `/tasks project-list [--all]` | List projects. Archived projects are hidden; `--all` includes them. |
 | `/tasks project-show <id>` | Project detail. |
 | `/tasks project-create <name>` | Create a project. |
 | `/tasks project-update <id> …` | Update project fields. |
 | `/tasks project-delete <id>` | Delete a project (cascades). |
+| `/tasks project-archive <id> [reason]` | Archive a project (read-only until unarchived). Needs a mapped tracker user; see below. |
+| `/tasks project-unarchive <id>` | Return an archived project to normal use. Needs a mapped tracker user; see below. |
 | `/tasks dep-add <taskId> <blocksTaskId>` | Add dependency. |
 | `/tasks dep-list <taskId>` | List dependencies. |
 | `/tasks dep-remove <taskId> <blocksTaskId>` | Remove dependency. |
@@ -208,6 +210,20 @@ the same `slack_user_id` indicate a missing binding.
 alongside `mcp-bot`. Both are real `users` rows with `is_service=1`
 so foreign-key constraints from the identity columns always resolve,
 even before any operator binds a real user.
+
+### Archive and unarchive need a mapped user (no fallback)
+
+`/tasks project-archive` and `/tasks project-unarchive` are the exception
+to the fallback above. Slack has no token scopes, so these two commands
+require the invoking Slack user to map to a tracker user through
+`findBySlackUserId`. An unmapped Slack user is refused with an ephemeral
+message ("Only a Slack user linked to a tracker user can archive a
+project.", or "unarchive") and **nothing is written**: no archive, no
+unarchive, no event. There is no fall-back to the `slack-bot` account or
+to the raw Slack id. For a mapped user, the project's `archived_by` (and
+the actor on the unarchive) is the mapped tracker user's display name,
+not the Slack display name. See
+[design §2.6](design/project-archived-state.md#26-who-may-archive).
 
 ## Notifier behaviour
 

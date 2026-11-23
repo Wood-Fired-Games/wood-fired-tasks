@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-11-23T21:14:30.562Z",
+    "generated_at": "2026-11-23T21:32:00.161Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -176,8 +176,8 @@
       "owner_role": "Slack maintainers",
       "status": "present",
       "approx_token_budget": 16000,
-      "actual_lines": 287,
-      "sha256": "9908b3370c1af79d229cc635c772dfa4afda40d2f11c086b73140074e8b0dc99"
+      "actual_lines": 303,
+      "sha256": "01c886625eeafd973824a43290897de330783760b993af2c272794045a4ac80b"
     },
     {
       "path": "docs/SCM.md",
