@@ -184,6 +184,9 @@ Schema validation reuses `ALLOWED_EVENT_TYPES` and `isAllowedEventType`
 from `src/events/types.ts` (zod `z.enum(ALLOWED_EVENT_TYPES)`). Unknown
 top-level keys, unknown handler names, unknown predicate operators, and
 unknown event types are validation errors at startup → exit 78.
+`project.archived` and `project.unarchived` are valid `on:` values (match
+them with `where: {}`; an archived project emits no task events). See rule 3
+in `packages/wft-router/triggers.example.yaml`.
 
 ### Predicate language
 
@@ -471,6 +474,21 @@ absent, so history-probing predicates fail closed and never
 sweep-dispatch. A sweep transport failure logs
 `wft_router_sweep_failed` and is isolated per rule — it never blocks
 the live SSE pipeline.
+
+**Archived projects.** `GET /tasks?project_id=N` still returns an archived
+project's tasks, so before a rule with a numeric `project:` is swept the
+router reads the project (`GET /api/v1/projects/N`) and skips the rule, with
+zero dispatches, when the answer is a 2xx body with `archived: true`. Only
+that definite answer skips it. A failed lookup (404, 403 — for example a
+token bound to another project — any other non-2xx, a transport error or an
+unparseable body) logs `wft_router_sweep_project_lookup_failed` (WARN, with
+`rule_name`, `project_id` and the error) and the rule runs as before: fail
+open, so an unreadable project cannot silence a rule on every sweep. A body
+without `archived` (an older server) counts as live. Lookups, failed ones
+included, are cached per project per sweep: one cold-start sweep shares one
+cache across its rules, and each periodic tick (below) starts a new one, so
+every sweep re-reads the project. A rule without a numeric `project:` needs no
+lookup: a cross-project task listing already omits archived projects' tasks.
 
 ### Periodic re-sweep (`sweep_interval_s`)
 

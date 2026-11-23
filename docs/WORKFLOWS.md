@@ -96,6 +96,12 @@ formatter is enabled (`biome.json` `formatter.enabled = true`).
 - Required env: `API_KEY` (a PAT, `wft_pat_…`, sent as `Authorization: Bearer`;
   unless you have run `tasks login`). Optional: `API_BASE_URL` (defaults to
   `http://localhost:3000`).
+- Retire a finished project without deleting its history:
+  `tasks project-archive <id> [--reason <text>]` (add `--with-unfinished`,
+  which needs `--reason`, if tasks are still unfinished; the global `--force`
+  does not do this). `tasks project-unarchive <id>` brings it back; a
+  warning on stderr (exit status still 0) names any task it could not
+  re-evaluate, and running it again in the same server process retries them.
 - Full reference: [docs/CLI.md](CLI.md).
 
 ## Database recipes

@@ -22,7 +22,7 @@ These options work with any command:
 |--------|-------------|
 | --json | Output in machine-readable JSON format (writes to stdout, errors to stderr) |
 | --no-input | Disable interactive prompts (fail if required options are missing) |
-| --force | Skip confirmation prompts for destructive operations |
+| --force | Skip confirmation prompts for destructive operations. It only skips prompts: it never forces an archive (that is `project-archive --with-unfinished`). |
 
 **Examples:**
 
@@ -263,6 +263,10 @@ tasks list --project 1 --status in_progress --assignee bob
 | --tags | | string | Filter by tags (comma-separated) |
 | --due-before | | string | Tasks due before date (ISO8601) |
 | --due-after | | string | Tasks due after date (ISO8601) |
+| --include-archived | | flag | Also list tasks of archived projects (they are hidden by default) |
+| --archived-only | | flag | List only tasks of archived projects |
+
+With `--project <id>` the project's tasks are listed even if it is archived.
 
 **Output:**
 
@@ -452,13 +456,24 @@ tasks project-create \
 
 ### tasks project-list
 
-List all projects.
+List projects. Archived projects are hidden unless asked for; an archived
+project shown with `--include-archived` is marked `[archived]` after its name.
 
 **Example:**
 
 ```bash
 tasks project-list
+tasks project-list --include-archived
 ```
+
+**Options:**
+
+| Option | Type | Description |
+|--------|------|-------------|
+| --include-archived | flag | Also list archived projects |
+| --archived-only | flag | List only archived projects |
+| --limit | number | Max rows to return (default 50, max 500) |
+| --offset | number | Zero-based offset for pagination (default 0) |
 
 **Output:**
 
@@ -497,6 +512,9 @@ Created: 2026-02-14T12:00:00.000Z
 Updated: 2026-02-14T12:00:00.000Z
 ```
 
+An archived project also shows an `Archived:` line with the date, who
+archived it and the reason.
+
 ### tasks project-update <id>
 
 Update a project.
@@ -531,6 +549,61 @@ tasks project-delete 1
 Are you sure you want to delete project #1? (y/N): y
 Project #1 deleted successfully
 ```
+
+### tasks project-archive <id>
+
+Archive a finished project instead of deleting it. It drops out of default
+listings and becomes read-only: its tasks stay readable by id and comments
+can still be added, but every other change is refused (`project_archived`)
+until it is unarchived. Archiving an already archived project changes nothing.
+
+**Example:**
+
+```bash
+tasks project-archive 7
+tasks project-archive 7 --reason "Shipped in 2.10.0"
+tasks project-archive 7 --with-unfinished --reason "Abandoned; tracked in project 9"
+```
+
+**Options:**
+
+| Option | Short | Type | Description |
+|--------|-------|------|-------------|
+| --reason | -r | string | Why the project is archived (1-500 characters; required with `--with-unfinished`) |
+| --with-unfinished | | flag | Archive although tasks are still unfinished. Requires `--reason`; without one the command exits 1 before sending anything. Task statuses are not changed. |
+
+While any task is `open`, `in_progress`, `blocked` or `backlogged`, the server
+refuses the archive and the command prints the count per status and exits 1;
+add `--with-unfinished --reason <text>` to archive anyway. The global `--force`
+only skips prompts and never forces an archive. Needs a token with the
+`write` scope.
+
+**JSON output:** the project is under `.data.project`.
+
+### tasks project-unarchive <id>
+
+Return an archived project to default listings and allow changes again.
+Unarchiving a project that is not archived changes nothing.
+
+**Example:**
+
+```bash
+tasks project-unarchive 7
+```
+
+While the project was archived, tasks whose blockers finished stayed
+`blocked`, and parents whose children all finished stayed open. The server
+re-evaluates the project once on unarchive and opens or completes them. If
+some of them could not be re-evaluated, the command still exits 0 but prints
+a warning on stderr naming those tasks; run `tasks project-unarchive <id>`
+again to retry them. The retry works only while the server has not restarted
+since; after a restart, archive the project again (with `--with-unfinished
+--reason` if it has unfinished tasks) and unarchive it. If the server is
+older than this client and does not report the result, stderr carries a note
+saying so instead: that means "unknown", not "nothing failed".
+
+**JSON output:** the project, including `reevaluation_failed_task_ids`, is
+under `.data.project`; no warning is printed under `--json`, so read the field.
 
 ## Model Commands
 
@@ -1871,6 +1944,12 @@ echo 'fpath=(~/.zsh/completions $fpath)' >> ~/.zshrc
 ```
 
 After restarting your shell (or `source ~/.bashrc` / `compinit` for zsh), pressing TAB after `tasks ` will complete command names. Pressing TAB after `--status ` or `--priority ` will complete valid enum values.
+
+Flag completion is per command: after `tasks <command> --`, only that
+command's own flags and the global flags are offered (for example
+`--with-unfinished` only after `project-archive`). For a command with
+subcommands (`db`, `docs`, `service`, `models`), bash completes the
+subcommand name and then that subcommand's own flags.
 
 **Arguments:**
 

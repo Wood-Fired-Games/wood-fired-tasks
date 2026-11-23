@@ -11,6 +11,55 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 ## [Unreleased]
 
+### Upgrade notes
+- **Migration 021** adds three nullable columns to `projects`
+  (`archived_at`, `archived_by`, `archive_reason`). No table rewrite, no
+  backfill, no project becomes archived. Rolling back drops the columns and
+  with them any archive state (see `docs/RELEASE.md`).
+
+### Added
+- **Archived project state.** A finished project can be archived instead of
+  deleted: it stays readable by id, leaves default listings and refuses every
+  write except comments (422 `project_archived`) until it is unarchived.
+  - REST `POST /api/v1/projects/:id/archive` (body `{reason?, force?}`) and
+    `POST /api/v1/projects/:id/unarchive`, `write` scope; a project-bound
+    token may archive only its own project.
+  - MCP `archive_project` and `unarchive_project`, on stdio and remote (33
+    tools in total).
+  - CLI `tasks project-archive <id> [--reason <text>] [--with-unfinished]`
+    and `tasks project-unarchive <id>`. `--with-unfinished` requires
+    `--reason`; the global `--force` only skips prompts and never forces an
+    archive.
+  - Slack `/tasks project-archive <id> [reason]` and
+    `/tasks project-unarchive <id>`, for a Slack user mapped to a tracker
+    user only. There is no force from Slack.
+  - `archived` listing filter (`exclude` default, `include`, `only`) on
+    `GET /projects`, `GET /tasks`, `list_projects`, `list_tasks`; CLI
+    `--include-archived` / `--archived-only` on `project-list` and `list`.
+    Naming a project's id always returns its tasks.
+  - `project.archived` and `project.unarchived` events on SSE and as
+    `wft-router` `on:` values; `archived_projects` in `/health/detailed`.
+- **Archiving is refused while tasks are unfinished** (`open`,
+  `in_progress`, `blocked`, `backlogged`): 422
+  `project_has_unfinished_tasks` with the counts per status in `details`.
+  `force: true` with a `reason` archives anyway without changing any task.
+- **Unarchive re-evaluates the project**: blocked tasks whose blockers all
+  finished meanwhile are opened and parents whose children are all done are
+  completed. The result carries `reevaluation_failed_task_ids` on REST, both
+  MCP transports, the CLI and Slack; the CLI exits 0 and warns on stderr
+  when it is non-empty. A repeated unarchive retries only those tasks, and
+  only within the same server process; after a restart, archive and
+  unarchive again.
+
+### Changed
+- **`wft-router` sweeps skip archived projects.** A rule with a numeric
+  `project:` is skipped when the project is archived; a failed project
+  lookup logs `wft_router_sweep_project_lookup_failed` and runs the rule
+  (fail open).
+- **Bash completion is per command.** It offers only the flags of the
+  command being completed plus the global flags, and completes the
+  subcommands of `db`, `docs`, `service` and `models` and then their flags.
+
 ## [2.9.0] - 2026-10-21
 
 Install-hygiene release. `npm i -g wood-fired-tasks` no longer prints any
