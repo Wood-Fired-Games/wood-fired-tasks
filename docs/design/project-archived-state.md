@@ -147,7 +147,9 @@ rolled back, in one shape on every surface: the project's fields plus
 The warning names the tasks and says to unarchive again to retry them (in the
 same server process; see the restart rule above). A
 response from a server older than #2542 has no field; clients treat it as
-absent, not as "nothing failed".
+absent, not as "nothing failed": the CLI (on stderr, without `--json`) and the
+remote `unarchive_project` text add a note that the server did not report the
+result (WFT #2552).
 
 ### 2.5 Default visibility
 

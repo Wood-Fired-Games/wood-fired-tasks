@@ -1116,13 +1116,27 @@ describe('registerRemoteTools', () => {
   });
 
   it('unarchive_project calls the client and formats the result', async () => {
-    client.unarchiveProject.mockResolvedValue({ id: 4, name: 'Old', archived: false });
+    client.unarchiveProject.mockResolvedValue({
+      id: 4,
+      name: 'Old',
+      archived: false,
+      reevaluation_failed_task_ids: [],
+    });
 
     const r = await handlers.get('unarchive_project')!({ id: 4 });
 
     expect(client.unarchiveProject).toHaveBeenCalledWith(4);
     expect(r.content[0].text).toBe('Project 4 unarchived: Old');
     expect(r.structuredContent).toMatchObject({ id: 4, archived: false });
+  });
+
+  it('unarchive_project against a server without the failed-ids field says the result is unknown (WFT #2552)', async () => {
+    client.unarchiveProject.mockResolvedValue({ id: 4, name: 'Old', archived: false });
+
+    const r = await handlers.get('unarchive_project')!({ id: 4 });
+
+    expect(r.content[0].text).toContain('Note: the server did not report');
+    expect(r.isError).toBeFalsy();
   });
 
   it('unarchive_project error path wraps in McpError', async () => {

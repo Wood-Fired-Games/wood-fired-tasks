@@ -86,12 +86,22 @@ export function formatArchiveResult(project: NamedProject): string {
  * The warning for tasks whose unarchive re-evaluation rolled back
  * (WFT #2542), or null when none did. Shared by the MCP tools (both
  * transports), the CLI and Slack so every surface says the same thing.
+ *
+ * `undefined` means the server did not send the field (it is older than
+ * #2542). That is not "nothing failed", so a note says the result is unknown
+ * (WFT #2552 point 2).
  */
 export function formatReevaluationFailures(
   projectId: number,
   failedTaskIds: readonly number[] | undefined,
 ): string | null {
-  if (!failedTaskIds || failedTaskIds.length === 0) {
+  if (failedTaskIds === undefined) {
+    return (
+      'Note: the server did not report which tasks failed re-evaluation (it is older than ' +
+      `this client); check the blocked tasks of project ${projectId}.`
+    );
+  }
+  if (failedTaskIds.length === 0) {
     return null;
   }
   const noun = failedTaskIds.length === 1 ? 'task' : 'tasks';
