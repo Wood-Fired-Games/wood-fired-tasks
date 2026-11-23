@@ -175,6 +175,7 @@ export function errorHandler(
     reply.code(422).send({
       error: 'BUSINESS_RULE_VIOLATION',
       message: error.message,
+      ...(error.details !== undefined ? { details: error.details } : {}),
     });
     return;
   }

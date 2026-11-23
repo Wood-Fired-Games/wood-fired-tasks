@@ -176,8 +176,13 @@ async function matchRepoName(
     return undefined;
   }
 
+  // WFT #2479: never auto-link an archived project. The default listing
+  // already omits them; the check also covers a server or lister that
+  // returns them anyway.
   const needle = repoName.toLowerCase();
-  return projects.find((p) => typeof p.name === 'string' && p.name.toLowerCase() === needle);
+  return projects.find(
+    (p) => p.archived !== true && typeof p.name === 'string' && p.name.toLowerCase() === needle,
+  );
 }
 
 /** Lazy real-client lister so the API module isn't imported until needed. */

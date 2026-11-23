@@ -361,8 +361,27 @@ describe('Project archive routes', () => {
     expect(body.error).toBe('BUSINESS_RULE_VIOLATION');
     expect(body.message).toMatch(/^project_has_unfinished_tasks/);
     expect(body.message).toContain('open: 1');
+    // WFT #2530: the counts are structured, not only message text.
+    expect(body.details).toEqual({
+      code: 'project_has_unfinished_tasks',
+      total: 1,
+      counts: { open: 1, in_progress: 0, blocked: 0, backlogged: 0 },
+    });
     const get = await server.inject({ method: 'GET', url: `/api/v1/projects/${id}`, headers });
     expect(JSON.parse(get.body).archived).toBe(false);
+  });
+
+  it('declares every response the archive and unarchive routes give (WFT #2530)', () => {
+    const spec = server.swagger() as {
+      paths: Record<string, { post?: { responses?: Record<string, unknown> } }>;
+    };
+    const responsesOf = (suffix: string): string[] => {
+      const path = Object.keys(spec.paths).find((p) => p.endsWith(suffix));
+      expect(path).toBeDefined();
+      return Object.keys(spec.paths[path as string].post?.responses ?? {}).sort();
+    };
+    expect(responsesOf('/projects/{id}/archive')).toEqual(['200', '400', '404', '422']);
+    expect(responsesOf('/projects/{id}/unarchive')).toEqual(['200', '400', '404']);
   });
 
   it('force with a reason archives despite unfinished tasks; force without a reason is 400', async () => {
@@ -371,6 +390,10 @@ describe('Project archive routes', () => {
 
     const noReason = await post(`/api/v1/projects/${id}/archive`, { force: true });
     expect(noReason.statusCode).toBe(400);
+    // WFT #2530: a stable code a client can anchor on.
+    expect(JSON.parse(noReason.body).message).toContain(
+      'archive_reason_required: reason is required when force is true',
+    );
 
     const forced = await post(`/api/v1/projects/${id}/archive`, { force: true, reason: 'shelved' });
     expect(forced.statusCode).toBe(200);

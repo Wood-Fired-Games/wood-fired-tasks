@@ -99,6 +99,14 @@ export function buildAuditAction(method: string, routePattern: string): string {
   return `${method.toUpperCase()} ${routePattern}`;
 }
 
+/**
+ * Trailing static segments that name an ACTION on the instance before them,
+ * not a sub-collection: `/projects/:id/archive` is recorded against
+ * `projects` + `:id` (WFT #2530). Deliberately a short explicit list; other
+ * trailing segments keep the collection rule.
+ */
+export const INSTANCE_ACTION_SEGMENTS: ReadonlySet<string> = new Set(['archive', 'unarchive']);
+
 /** True for a Fastify path-parameter or wildcard segment. */
 function isParamSegment(segment: string): boolean {
   return segment.startsWith(':') || segment === '*';
@@ -123,19 +131,28 @@ export function deriveAuditResource(
     return { resourceType: UNKNOWN_RESOURCE_TYPE, resourceId: null };
   }
 
+  // A state-change action on one instance (`/api/v1/projects/:id/archive`):
+  // the row names that instance, as the MCP producer does (WFT #2530). The
+  // action itself is already in the `action` column.
+  const beforeLast = segments[segments.length - 2];
+  const isInstanceAction =
+    INSTANCE_ACTION_SEGMENTS.has(last) && beforeLast !== undefined && isParamSegment(beforeLast);
+  const addressed = isInstanceAction ? (beforeLast as string) : last;
+  const searchFrom = isInstanceAction ? segments.length - 3 : segments.length - 2;
+
   // Collection-addressing route (`/api/v1/tasks`, `/api/v1/tasks/:id/comments`).
-  if (!isParamSegment(last)) {
-    return { resourceType: last, resourceId: null };
+  if (!isParamSegment(addressed)) {
+    return { resourceType: addressed, resourceId: null };
   }
 
   // Instance-addressing route: the trailing parameter names the resource.
-  const paramName = last === '*' ? '*' : last.slice(1);
+  const paramName = addressed === '*' ? '*' : addressed.slice(1);
   const bag =
     typeof params === 'object' && params !== null ? (params as Record<string, unknown>) : {};
   const rawId = bag[paramName];
 
   let resourceType = UNKNOWN_RESOURCE_TYPE;
-  for (let i = segments.length - 2; i >= 0; i -= 1) {
+  for (let i = searchFrom; i >= 0; i -= 1) {
     const segment = segments[i] as string;
     if (!isParamSegment(segment)) {
       resourceType = segment;

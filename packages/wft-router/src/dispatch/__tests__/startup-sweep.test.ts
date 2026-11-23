@@ -94,14 +94,30 @@ function rule(overrides: Partial<TriggersRule> = {}): TriggersRule {
   } as TriggersRule;
 }
 
-/** Fake fetch returning canned pages keyed by `offset`. */
+/**
+ * Fake fetch returning canned task pages keyed by `offset`. A
+ * `GET /api/v1/projects/:id` request is answered from `projects` (an absent
+ * id answers 404); it is recorded in `calls` like any other request.
+ */
 function pagedFetch(
   pages: Record<string, { data: unknown[]; total: number }>,
   calls: string[],
+  projects: Record<string, Record<string, unknown>> = {},
 ): typeof fetch {
   return (async (input: RequestInfo | URL): Promise<Response> => {
     const url = String(input);
     calls.push(url);
+    const projectMatch = /\/api\/v1\/projects\/(\d+)$/.exec(new URL(url).pathname);
+    if (projectMatch !== null) {
+      const project = projects[projectMatch[1] as string];
+      if (project === undefined) {
+        return new Response(JSON.stringify({ error: 'not found' }), { status: 404 });
+      }
+      return new Response(JSON.stringify(project), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
     const offset = new URL(url).searchParams.get('offset') ?? '0';
     const page = pages[offset] ?? { data: [], total: 0 };
     return new Response(JSON.stringify({ ...page, limit: 500, offset: Number(offset) }), {
@@ -119,14 +135,17 @@ describe('findFirstMatchingOpenTask', () => {
     const fetchImpl = pagedFetch(
       { '0': { data: [{ id: 1, project_id: 5, status: 'open', assignee: 'me' }], total: 1 } },
       calls,
+      { '5': { id: 5, name: 'p', archived: false } },
     );
     const match = await findFirstMatchingOpenTask(
       rule({ where: { project: 5, assignee: 'me' } } as Partial<TriggersRule>),
       { ...OPTS, fetchImpl },
     );
     expect(match?.payload.task?.id).toBe(1);
-    expect(calls).toHaveLength(1);
-    const params = new URL(calls[0] as string).searchParams;
+    // One project lookup (archived check), then one task page.
+    expect(calls).toHaveLength(2);
+    expect(new URL(calls[0] as string).pathname).toBe('/api/v1/projects/5');
+    const params = new URL(calls[1] as string).searchParams;
     expect(params.get('status')).toBe('open');
     expect(params.get('project_id')).toBe('5');
     expect(params.get('assignee')).toBe('me');
@@ -194,6 +213,49 @@ describe('findFirstMatchingOpenTask', () => {
     );
     expect(match?.payload.task?.id).toBe(501);
     expect(calls).toHaveLength(2);
+  });
+
+  // Archived project state (design §3.8): `GET /tasks?project_id=N` still
+  // returns an archived project's tasks, so the sweep fetches the project
+  // once and skips it — zero dispatches — when it is archived.
+  it('skips a numeric project rule whose project is archived (zero dispatches)', async () => {
+    const calls: string[] = [];
+    const fetchImpl = pagedFetch(
+      { '0': { data: [{ id: 1, project_id: 5, status: 'open' }], total: 1 } },
+      calls,
+      { '5': { id: 5, name: 'p', archived: true, archived_at: '2026-11-23T00:00:00Z' } },
+    );
+    const match = await findFirstMatchingOpenTask(
+      rule({ where: { project: 5 } } as Partial<TriggersRule>),
+      { ...OPTS, fetchImpl },
+    );
+    expect(match).toBeNull();
+    // The project is fetched exactly once and no task page is queried.
+    expect(calls).toHaveLength(1);
+    expect(new URL(calls[0] as string).pathname).toBe('/api/v1/projects/5');
+  });
+
+  it('does not look up a project when the rule has no numeric project', async () => {
+    const calls: string[] = [];
+    const fetchImpl = pagedFetch(
+      { '0': { data: [{ id: 1, project_id: 5, status: 'open' }], total: 1 } },
+      calls,
+    );
+    const match = await findFirstMatchingOpenTask(rule(), { ...OPTS, fetchImpl });
+    expect(match?.payload.task?.id).toBe(1);
+    expect(calls).toHaveLength(1);
+    expect(new URL(calls[0] as string).pathname).toBe('/api/v1/tasks');
+  });
+
+  it('throws when the project lookup is non-2xx so the caller can isolate the rule', async () => {
+    const calls: string[] = [];
+    const fetchImpl = pagedFetch({}, calls, {});
+    await expect(
+      findFirstMatchingOpenTask(rule({ where: { project: 9 } } as Partial<TriggersRule>), {
+        ...OPTS,
+        fetchImpl,
+      }),
+    ).rejects.toThrow(/project lookup returned HTTP 404/);
   });
 
   it('throws on a non-2xx response so the caller can isolate the rule', async () => {

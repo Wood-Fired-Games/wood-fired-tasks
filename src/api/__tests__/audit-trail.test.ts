@@ -167,6 +167,41 @@ describe('REST audit trail — full stack wiring', () => {
     expect(putRow.resource_id).toBe(String(taskId));
   });
 
+  it('records archive and unarchive against the project, with its id (WFT #2530)', async () => {
+    const auth = seedAuth(db, { displayName: 'audit-archive-user', name: 'audit-archive-token' });
+    const target = app.projectService.createProject({ name: 'Audited archive' }).id;
+
+    const archived = await server.inject({
+      method: 'POST',
+      url: `/api/v1/projects/${target}/archive`,
+      headers: auth.headers,
+      payload: {},
+    });
+    expect(archived.statusCode).toBe(200);
+    const unarchived = await server.inject({
+      method: 'POST',
+      url: `/api/v1/projects/${target}/unarchive`,
+      headers: auth.headers,
+    });
+    expect(unarchived.statusCode).toBe(200);
+
+    const rows = await waitForRows(
+      () => app.auditEventRepository.findByActor(String(auth.userId), 10),
+      2,
+    );
+    const byAction = new Map(rows.map((row) => [row.action, row]));
+    for (const action of [
+      'POST /api/v1/projects/:id/archive',
+      'POST /api/v1/projects/:id/unarchive',
+    ]) {
+      const row = byAction.get(action) as AuditEventRow;
+      expect(row).toBeDefined();
+      expect(row.resource_type).toBe('projects');
+      expect(row.resource_id).toBe(String(target));
+      expect(row.metadata).toMatchObject({ status: 200 });
+    }
+  });
+
   it('registers the hook exactly ONCE — N nested-scope mutations produce N rows, never 2N', async () => {
     // The hook lives on the ROOT instance while `/api/v1` routes live in a
     // nested scope (root → the `{ prefix: '/api/v1' }` register lambda → each
@@ -417,6 +452,22 @@ describe('audit-trail resource derivation', () => {
       resourceId: null,
     });
     expect(deriveAuditResource('/api/v1/tasks/:id/comments', { id: 3 })).toEqual({
+      resourceType: 'comments',
+      resourceId: null,
+    });
+  });
+
+  it('records a state-change action on an instance against that instance (WFT #2530)', () => {
+    expect(deriveAuditResource('/api/v1/projects/:id/archive', { id: 7 })).toEqual({
+      resourceType: 'projects',
+      resourceId: '7',
+    });
+    expect(deriveAuditResource('/api/v1/projects/:id/unarchive', { id: 7 })).toEqual({
+      resourceType: 'projects',
+      resourceId: '7',
+    });
+    // Only the listed action segments: a sub-collection keeps the rule above.
+    expect(deriveAuditResource('/api/v1/projects/:id/comments', { id: 7 })).toEqual({
       resourceType: 'comments',
       resourceId: null,
     });

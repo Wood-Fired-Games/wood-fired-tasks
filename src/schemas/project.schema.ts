@@ -92,6 +92,13 @@ export type UpdateProjectInput = z.infer<typeof UpdateProjectSchema>;
  * tasks, and then `reason` is required. `archived_by` is deliberately NOT
  * here — it comes from the authenticated caller, never the request body.
  */
+/**
+ * Stable code that opens the validation message for `force: true` without a
+ * `reason` (WFT #2530), so REST, stdio MCP and remote MCP callers can anchor
+ * on it.
+ */
+export const ARCHIVE_REASON_REQUIRED_CODE = 'archive_reason_required';
+
 export const ArchiveProjectSchema = z
   .object({
     reason: z
@@ -103,7 +110,7 @@ export const ArchiveProjectSchema = z
     force: z.boolean().optional(),
   })
   .refine((body) => body.force !== true || body.reason !== undefined, {
-    message: 'reason is required when force is true',
+    message: `${ARCHIVE_REASON_REQUIRED_CODE}: reason is required when force is true`,
     path: ['reason'],
   });
 export type ArchiveProjectInput = z.infer<typeof ArchiveProjectSchema>;

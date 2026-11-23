@@ -21,6 +21,7 @@ This skill calls tools on the `wood-fired-tasks` MCP server. Shorthand `wood-fir
 2. **Retrieve Assigned Tasks**
    - Call `wood-fired-tasks:list_tasks` with filter:
      - assignee: `$ME` (NOT the literal "user")
+   - Tasks of archived projects are omitted by default (`archived: "exclude"`); pass `archived: "include"` only when the user asks for them.
 
 3. **Group Results by Status**
 

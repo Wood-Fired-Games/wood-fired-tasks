@@ -14,6 +14,7 @@ import type {
   HealthResponse,
   PaginatedResponse,
   PaginationParams,
+  ProjectListParams,
   CompletionReportInput,
   CompletionReportResponse,
 } from '../../cli/api/types.js';
@@ -174,17 +175,16 @@ export class ApiRequestError extends Error {
     readonly status: number,
     readonly errorCode: string | null,
     readonly apiMessage: string,
+    /** The body's `details` when it carried one (WFT #2530). */
+    readonly details?: unknown,
   ) {
     super(`API request failed: ${apiMessage}`);
     this.name = 'ApiRequestError';
   }
 }
 
-/** Query parameters of `GET /api/v1/projects`. */
-export interface ProjectListParams extends PaginationParams {
-  /** Archived project state: `exclude` (server default), `include` or `only`. */
-  archived?: ArchivedFilter;
-}
+/** Query parameters of `GET /api/v1/projects` (shared with the CLI client). */
+export type { ProjectListParams };
 
 /**
  * REST API client for the remote MCP server.
@@ -247,15 +247,21 @@ export class RestClient {
       if (!response.ok) {
         let errorMessage: string;
         let errorCode: string | null = null;
+        let details: unknown;
         try {
-          const body = (await response.json()) as { message?: string; error?: string };
+          const body = (await response.json()) as {
+            message?: string;
+            error?: string;
+            details?: unknown;
+          };
           errorMessage =
             body.message || body.error || `HTTP ${response.status}: ${response.statusText}`;
           errorCode = typeof body.error === 'string' ? body.error : null;
+          details = body.details;
         } catch {
           errorMessage = `HTTP ${response.status}: ${response.statusText}`;
         }
-        throw new ApiRequestError(response.status, errorCode, errorMessage);
+        throw new ApiRequestError(response.status, errorCode, errorMessage, details);
       }
 
       // 204 No Content has no body to parse

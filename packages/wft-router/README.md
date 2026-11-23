@@ -74,6 +74,8 @@ wake their targets. Dedup: `sweep:<rule>:<floor(now / idempotency_window)>`,
 so a restart within the same window dispatches nothing. See
 [docs/event-router-design.md §Cold-start sweep](../../docs/event-router-design.md).
 
+**Archived projects** are read-only and emit no task events: the sweep skips a numeric-`project:` rule whose project is archived, and `create_task_in_project` into one fails permanently (HTTP 422 `project_archived`). To react to archiving, match `on: project.archived` (or `project.unarchived`) with `where: {}` — see rule 3 in [`triggers.example.yaml`](triggers.example.yaml).
+
 **Periodic re-sweep** (opt-in, default off): `sweep_interval_s: <seconds>` (per rule or under `defaults:`) re-runs that sweep on a timer — no restart, no SSE event — re-kicking sessions that went idle mid-run; same per-window dedup.
 
 - **Recipes** (full walkthroughs): [docs/automation-recipes/](https://github.com/Wood-Fired-Games/wood-fired-tasks/tree/main/docs/automation-recipes)

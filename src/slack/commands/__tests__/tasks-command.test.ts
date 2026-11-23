@@ -914,10 +914,28 @@ describe('registerTasksCommand', () => {
       }>;
     };
 
+    /** The tracker user the Slack caller maps to (WFT #2531). */
+    const trackerUser = {
+      id: 17,
+      email: 'alice@example.com',
+      display_name: 'Alice',
+      oidc_provider: 'google',
+      oidc_sub: 'sub-17',
+      slack_user_id: 'U0123ABC',
+      is_legacy: 0,
+      is_service_account: 0,
+      created_at: '2026-02-18T00:00:00Z',
+      last_login_at: null,
+    };
+
     beforeEach(() => {
       app = makeMockApp();
       services = makeMockServices();
       identityCache = makeMockIdentityCache();
+      // Archive and unarchive need a mapped tracker user (WFT #2531).
+      vi.mocked(services.userRepository.findBySlackUserId).mockReturnValue(
+        trackerUser as unknown as ReturnType<Services['userRepository']['findBySlackUserId']>,
+      );
       registerTasksCommand(app as unknown as App, services, identityCache);
     });
 
@@ -936,13 +954,56 @@ describe('registerTasksCommand', () => {
       archive_reason: null,
     });
 
+    describe('mapped tracker user required (WFT #2531)', () => {
+      it.each([
+        ['project-archive 5 shipped', 'archive'],
+        ['project-unarchive 5', 'unarchive'],
+      ])('`%s` from an unmapped Slack user is refused and writes nothing', async (text, verb) => {
+        vi.mocked(services.userRepository.findBySlackUserId).mockReturnValue(null);
+
+        const responded = await run(text);
+
+        expect(services.userRepository.findBySlackUserId).toHaveBeenCalledWith('U0123ABC');
+        expect(services.projectService.archiveProject).not.toHaveBeenCalled();
+        expect(services.projectService.unarchiveProject).not.toHaveBeenCalled();
+        expect(responded.response_type).toBe('ephemeral');
+        expect(responded.blocks[0]?.text?.text).toContain(':x:');
+        expect(responded.blocks[0]?.text?.text).toContain(
+          `Only a Slack user linked to a tracker user can ${verb} a project.`,
+        );
+      });
+
+      it('records the mapped tracker user, not the Slack display name, as the actor', async () => {
+        vi.mocked(services.userRepository.findBySlackUserId).mockReturnValue({
+          ...trackerUser,
+          display_name: 'alice-tracker',
+        } as unknown as ReturnType<Services['userRepository']['findBySlackUserId']>);
+        vi.mocked(services.projectService.archiveProject).mockReturnValue(archivedProject);
+        vi.mocked(services.projectService.unarchiveProject).mockReturnValue(makeMockProject());
+
+        await run('project-archive 5');
+        expect(services.projectService.archiveProject).toHaveBeenCalledWith(5, {}, 'alice-tracker');
+      });
+
+      it('records the mapped tracker user on unarchive', async () => {
+        vi.mocked(services.userRepository.findBySlackUserId).mockReturnValue({
+          ...trackerUser,
+          display_name: 'alice-tracker',
+        } as unknown as ReturnType<Services['userRepository']['findBySlackUserId']>);
+        vi.mocked(services.projectService.unarchiveProject).mockReturnValue(makeMockProject());
+
+        await run('project-unarchive 5');
+        expect(services.projectService.unarchiveProject).toHaveBeenCalledWith(5, 'alice-tracker');
+      });
+    });
+
     describe('/tasks project-archive', () => {
       it('archives the project as the Slack user and confirms', async () => {
         vi.mocked(services.projectService.archiveProject).mockReturnValue(archivedProject);
 
         const responded = await run('project-archive 5');
 
-        expect(identityCache.resolve).toHaveBeenCalledWith('U0123ABC');
+        expect(services.userRepository.findBySlackUserId).toHaveBeenCalledWith('U0123ABC');
         expect(services.projectService.archiveProject).toHaveBeenCalledWith(5, {}, 'Alice');
         expect(responded.response_type).toBe('ephemeral');
         expect(responded.text).toBe('Project #5 archived');
@@ -1020,7 +1081,7 @@ describe('registerTasksCommand', () => {
 
         const responded = await run('project-unarchive 5');
 
-        expect(identityCache.resolve).toHaveBeenCalledWith('U0123ABC');
+        expect(services.userRepository.findBySlackUserId).toHaveBeenCalledWith('U0123ABC');
         expect(services.projectService.unarchiveProject).toHaveBeenCalledWith(5, 'Alice');
         expect(responded.response_type).toBe('ephemeral');
         expect(responded.text).toBe('Project #5 unarchived');

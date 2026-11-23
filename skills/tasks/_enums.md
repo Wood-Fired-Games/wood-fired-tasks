@@ -49,6 +49,27 @@ Notes:
 - There is **no `normal`** priority (use `medium`).
 - Default priority for new tasks is `medium`; default for `/tasks:log-bug` is `high`.
 
+## Canonical ARCHIVED_FILTERS
+
+The `archived` filter on `list_projects` and `list_tasks` (and the CLI's
+`--archived`). Source: [`src/types/task.ts`](../../src/types/task.ts)
+(`ARCHIVED_FILTERS`); Zod: `ArchivedFilterSchema` in
+[`src/schemas/project.schema.ts`](../../src/schemas/project.schema.ts).
+
+Default: `exclude`.
+
+1. `exclude` — archived projects (and, on a cross-project task listing,
+   their tasks) are omitted.
+2. `include` — return them alongside the rest.
+3. `only` — return archived projects (or their tasks) and nothing else.
+
+Notes:
+
+- An explicit `project_id` on `list_tasks` always returns that project's
+  tasks, archived or not; the filter applies to cross-project listings.
+- An archived project is read-only: task writes into it are refused with the
+  stable code `project_archived`. Comments are still allowed.
+
 ## How skills should cite this file
 
 A skill that lists or branches on enum values MUST include a one-line reference near the value list, e.g.:

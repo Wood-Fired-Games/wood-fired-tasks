@@ -75,8 +75,11 @@ export interface StatuslineDeps {
   resolveProject?: (cwd: string) => Promise<ProjectResolution>;
   /** Fetches `{ open, doneClosed }` counts over REST (#594). */
   fetchCounts?: (projectId: number) => Promise<CountResult>;
-  /** Resolves a display name for a numeric project id (best-effort). */
-  resolveProjectName?: (projectId: number) => Promise<string | undefined>;
+  /**
+   * Resolves a display name and the archived flag for a numeric project id
+   * (best-effort; undefined when the project cannot be read).
+   */
+  resolveProjectInfo?: (projectId: number) => Promise<ProjectInfo | undefined>;
   /** Reads the per-project count cache (#592). */
   readCountCache?: (projectKey: string, ttlMs: number, now?: number) => TtlResult<CountCache>;
   /** Writes the per-project count cache (#592). */
@@ -134,12 +137,21 @@ function defaultReadStdin(): Promise<string> {
   });
 }
 
-/** Lazy project-name lookup so the API module isn't imported until needed. */
-async function defaultResolveProjectName(projectId: number): Promise<string | undefined> {
+/** What the status line shows about a linked project besides its counts. */
+export interface ProjectInfo {
+  name: string;
+  /** WFT #2479: an explicitly linked archived project gets a marker. */
+  archived: boolean;
+}
+
+/** Lazy project lookup so the API module isn't imported until needed. */
+async function defaultResolveProjectInfo(projectId: number): Promise<ProjectInfo | undefined> {
   try {
     const { getProject } = await import('../api/client.js');
     const project = await getProject(projectId);
-    return typeof project.name === 'string' ? project.name : undefined;
+    return typeof project.name === 'string'
+      ? { name: project.name, archived: project.archived === true }
+      : undefined;
   } catch {
     return undefined;
   }
@@ -159,6 +171,17 @@ interface CountsSegment {
   projectName: string;
   open: number;
   doneClosed: number;
+  archived: boolean;
+}
+
+/** The segment a cached entry renders (an entry without the flag is live). */
+function segmentFromCache(value: CountCache): CountsSegment {
+  return {
+    projectName: value.projectName,
+    open: value.open,
+    doneClosed: value.doneClosed,
+    archived: value.archived === true,
+  };
 }
 
 /**
@@ -172,7 +195,7 @@ async function resolveCountsSegment(
   deps: Required<
     Pick<
       StatuslineDeps,
-      'fetchCounts' | 'resolveProjectName' | 'readCountCache' | 'writeCountCache' | 'now'
+      'fetchCounts' | 'resolveProjectInfo' | 'readCountCache' | 'writeCountCache' | 'now'
     >
   >,
 ): Promise<CountsSegment | undefined> {
@@ -193,23 +216,13 @@ async function resolveCountsSegment(
 
   // FRESH cache → render from it with NO API call.
   if (cached.state === 'fresh') {
-    return {
-      projectName: cached.value.projectName,
-      open: cached.value.open,
-      doneClosed: cached.value.doneClosed,
-    };
+    return segmentFromCache(cached.value);
   }
 
   // We can only refresh when we have a numeric id to query.
   if (resolution.projectId === undefined) {
     // Stale-or-blank: no id to refresh with, fall back to a stale value.
-    return cached.state === 'stale'
-      ? {
-          projectName: cached.value.projectName,
-          open: cached.value.open,
-          doneClosed: cached.value.doneClosed,
-        }
-      : undefined;
+    return cached.state === 'stale' ? segmentFromCache(cached.value) : undefined;
   }
 
   // STALE or MISSING → refresh over REST (counts + name, concurrently).
@@ -222,25 +235,25 @@ async function resolveCountsSegment(
 
   if (!counts.ok) {
     // API unreachable → degrade to the stale value when present, else blank.
-    return cached.state === 'stale'
-      ? {
-          projectName: cached.value.projectName,
-          open: cached.value.open,
-          doneClosed: cached.value.doneClosed,
-        }
-      : undefined;
+    return cached.state === 'stale' ? segmentFromCache(cached.value) : undefined;
   }
 
   // Counts succeeded. Resolve a display name: prefer a freshly fetched name,
   // then the stale cache's name, then the resolution's repoName, then `#id`.
-  let projectName: string | undefined;
+  // The archived flag comes with a fresh name, else from the stale entry.
+  let info: ProjectInfo | undefined;
   try {
-    projectName = await deps.resolveProjectName(resolution.projectId);
+    info = await deps.resolveProjectInfo(resolution.projectId);
   } catch {
-    projectName = undefined;
+    info = undefined;
   }
+  let projectName = info?.name;
+  let archived = info?.archived;
   if (projectName === undefined && cached.state === 'stale') {
     projectName = cached.value.projectName;
+  }
+  if (archived === undefined) {
+    archived = cached.state === 'stale' && cached.value.archived === true;
   }
   if (projectName === undefined) projectName = resolution.repoName;
   if (projectName === undefined) projectName = `#${resolution.projectId}`;
@@ -254,6 +267,7 @@ async function resolveCountsSegment(
         projectName,
         open: counts.open,
         doneClosed: counts.doneClosed,
+        archived,
       },
       now,
     );
@@ -261,7 +275,7 @@ async function resolveCountsSegment(
     // Ignore — we still render the freshly fetched counts below.
   }
 
-  return { projectName, open: counts.open, doneClosed: counts.doneClosed };
+  return { projectName, open: counts.open, doneClosed: counts.doneClosed, archived };
 }
 
 /**
@@ -311,7 +325,7 @@ export async function renderStatusline(
     readStdin: deps.readStdin ?? defaultReadStdin,
     resolveProject: deps.resolveProject ?? resolveProjectFromCwd,
     fetchCounts: deps.fetchCounts ?? fetchCounts,
-    resolveProjectName: deps.resolveProjectName ?? defaultResolveProjectName,
+    resolveProjectInfo: deps.resolveProjectInfo ?? defaultResolveProjectInfo,
     readCountCache: deps.readCountCache ?? readCountCache,
     writeCountCache: deps.writeCountCache ?? writeCountCache,
     readUpdateCache: deps.readUpdateCache ?? readUpdateCache,

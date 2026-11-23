@@ -15,7 +15,7 @@
 import type { z } from 'zod';
 import type { TaskResponseSchema } from '../../api/routes/tasks/schemas.js';
 import type { ProjectResponseSchema } from '../../api/routes/projects/schemas.js';
-import type { ValueCharter } from '../../types/task.js';
+import type { ArchivedFilter, ValueCharter } from '../../types/task.js';
 import type { ModelPolicy } from '../../schemas/model-policy.schema.js';
 import type { ScmCharter } from '../../schemas/scm-charter.schema.js';
 
@@ -81,6 +81,13 @@ export interface TaskFilters {
   limit?: number;
   /** Zero-based offset; server defaults to 0 if omitted. */
   offset?: number;
+  /**
+   * Archived project state: `exclude` (server default) omits tasks of
+   * archived projects unless `project_id` names one; `include` or `only`.
+   */
+  archived?: ArchivedFilter;
+  /** Wave 1.4 (#312) verified-state filter; sent as `true` / `false`. */
+  verified?: boolean;
 }
 
 /**
@@ -102,11 +109,25 @@ export interface PaginationParams {
   offset?: number;
 }
 
+/** Query parameters of `GET /api/v1/projects`. */
+export interface ProjectListParams extends PaginationParams {
+  /** Archived project state: `exclude` (server default), `include` or `only`. */
+  archived?: ArchivedFilter;
+}
+
 export interface CreateProjectInput {
   name: string;
   description?: string | null;
   /** WSJF (Phase 3.1): optional value charter; `null` clears, absent leaves untouched. */
   value_charter?: ValueCharter | null;
+}
+
+/** Body of `POST /api/v1/projects/:id/archive` (WFT #2477). */
+export interface ArchiveProjectOptions {
+  /** Free text, max 500 characters; required with `force`. */
+  reason?: string;
+  /** Archive although tasks are unfinished; needs `reason`. */
+  force?: boolean;
 }
 
 export interface UpdateProjectInput {

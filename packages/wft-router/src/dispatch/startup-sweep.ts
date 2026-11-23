@@ -121,6 +121,43 @@ export interface SweepMatch {
   openTotal: number;
 }
 
+/** Loose wire shape of `GET /api/v1/projects/:id` (only what the sweep reads). */
+interface WireProject {
+  archived?: boolean;
+}
+
+/**
+ * True when the project is archived. Archived project state (design §3.8):
+ * `GET /tasks?project_id=N` still returns an archived project's tasks, so a
+ * numeric `project:` rule must check the project itself, once per sweep.
+ * Throws on transport failure, non-2xx or unparseable JSON — the caller
+ * isolates the rule exactly as it does for a failed task-list query.
+ */
+async function isProjectArchived(
+  projectId: number,
+  base: string,
+  auth: { name: string; value: string },
+  opts: SweepQueryOptions,
+): Promise<boolean> {
+  const res = await httpRequest({
+    method: 'GET',
+    url: `${base}/api/v1/projects/${String(projectId)}`,
+    headers: { [auth.name]: auth.value, Accept: 'application/json' },
+    ...(opts.fetchImpl !== undefined && { fetchImpl: opts.fetchImpl }),
+    ...(opts.signal !== undefined && { signal: opts.signal }),
+  });
+  if (res.status < 200 || res.status >= 300) {
+    throw new Error(`project lookup returned HTTP ${String(res.status)}`);
+  }
+  let parsed: WireProject;
+  try {
+    parsed = JSON.parse(res.bodyText) as WireProject;
+  } catch {
+    throw new Error('project lookup returned unparseable JSON');
+  }
+  return parsed.archived === true;
+}
+
 /** Strip the trailing slash from the base URL so path joins are predictable. */
 function trimBase(base: string): string {
   return base.replace(/\/+$/, '');
@@ -152,6 +189,16 @@ export async function findFirstMatchingOpenTask(
 ): Promise<SweepMatch | null> {
   const auth = authHeaderFor(opts.authToken);
   const base = trimBase(opts.apiBaseUrl);
+
+  // An archived project is frozen: skip the rule (zero dispatches). A rule
+  // without a numeric `project:` needs no lookup — a cross-project task
+  // listing already drops archived projects' tasks by default.
+  if (
+    typeof rule.where.project === 'number' &&
+    (await isProjectArchived(rule.where.project, base, auth, opts))
+  ) {
+    return null;
+  }
 
   const params = new URLSearchParams();
   params.set('status', 'open');

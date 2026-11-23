@@ -25,6 +25,7 @@ Shorthand `wood-fired-tasks:<tool>` ↔ harness name `mcp__wood-fired-tasks__<to
 2. **Select project**
    - If a `--project <id>` arg is present, use it directly.
    - Otherwise call `wood-fired-tasks:list_projects`, present the list, ask user to pick. If only one project exists, default to it without prompting.
+   - The list hides archived projects by default; pass `archived: "include"` only when the user asks for them. A bug cannot be logged into an archived project (`create_task` is refused with `project_archived`): say so and point at `unarchive_project` / `tasks project-unarchive <id>`.
    - On empty project list: "No projects exist — create one first with the wood-fired-tasks UI or API. Cannot log a bug into nothing." Stop.
 
 3. **Duplicate / reopen check**

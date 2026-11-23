@@ -65,7 +65,7 @@ function baseDeps(overrides: Partial<StatuslineDeps> = {}): StatuslineDeps {
     readStdin: async () => JSON.stringify({ cwd: '/repo' }),
     resolveProject: async () => resolution,
     fetchCounts: async () => ({ ok: true, open: 0, doneClosed: 0 }) as CountResult,
-    resolveProjectName: async () => 'myproj',
+    resolveProjectInfo: async () => ({ name: 'myproj', archived: false }),
     readCountCache: () => freshCache(),
     writeCountCache: (_k, payload) => ({ ...payload, fetchedAt: NOW }),
     readUpdateCache: () => ({ state: 'missing' }),
@@ -133,7 +133,7 @@ describe('renderStatusline', () => {
       baseDeps({
         readCountCache: () => ({ state: 'missing' }),
         fetchCounts: fetchSpy as unknown as StatuslineDeps['fetchCounts'],
-        resolveProjectName: async () => 'freshname',
+        resolveProjectInfo: async () => ({ name: 'freshname', archived: false }),
         writeCountCache: writeSpy as unknown as StatuslineDeps['writeCountCache'],
       }),
       false,
@@ -144,6 +144,45 @@ describe('renderStatusline', () => {
     expect(line).toContain('freshname');
     expect(line).toContain('5 open');
     expect(line).toContain('9 done');
+  });
+
+  describe('an explicitly linked archived project (WFT #2479)', () => {
+    it('renders the archived marker after a refresh and caches the flag', async () => {
+      const writeSpy = vi.fn((_k: string, payload: Omit<CountCache, 'fetchedAt'>) => ({
+        ...payload,
+        fetchedAt: NOW,
+      }));
+
+      const line = await renderStatusline(
+        baseDeps({
+          readCountCache: () => ({ state: 'missing' }),
+          fetchCounts: async () => ({ ok: true, open: 0, doneClosed: 12 }) as CountResult,
+          resolveProjectInfo: async () => ({ name: 'shelved', archived: true }),
+          writeCountCache: writeSpy as unknown as StatuslineDeps['writeCountCache'],
+        }),
+        false,
+      );
+
+      expect(line).toBe('shelved [archived] 0 open · 12 done');
+      expect(writeSpy.mock.calls[0]![1]).toMatchObject({ projectName: 'shelved', archived: true });
+    });
+
+    it('renders the marker from a fresh cache without an API call', async () => {
+      const line = await renderStatusline(
+        baseDeps({
+          readCountCache: () => freshCache({ projectName: 'shelved', archived: true }),
+        }),
+        false,
+      );
+
+      expect(line).toContain('shelved [archived]');
+    });
+
+    it('a cache entry written before the flag existed renders without a marker', async () => {
+      const line = await renderStatusline(baseDeps({ readCountCache: () => freshCache() }), false);
+
+      expect(line).not.toContain('[archived]');
+    });
   });
 
   it('degrades to STALE cache (no throw) when the API is unreachable', async () => {
@@ -296,7 +335,7 @@ describe('renderStatusline', () => {
       baseDeps({
         readCountCache: () => freshCache(),
         fetchCounts: fetchSpy as unknown as StatuslineDeps['fetchCounts'],
-        resolveProjectName: nameSpy as unknown as StatuslineDeps['resolveProjectName'],
+        resolveProjectInfo: nameSpy as unknown as StatuslineDeps['resolveProjectInfo'],
       }),
       false,
     );

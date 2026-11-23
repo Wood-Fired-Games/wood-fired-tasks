@@ -3,7 +3,9 @@ import { toStructuredContent } from '../lib/structured-content.js';
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { ApiRequestError, RestClient } from './rest-client.js';
-import { ArchivedFilterValueSchema } from '../../schemas/project.schema.js';
+import { ArchivedFilterValueSchema, ArchiveProjectSchema } from '../../schemas/project.schema.js';
+import { validationErrorFromIssues } from '../../services/errors.js';
+import { convertToMcpError } from '../errors.js';
 import {
   ARCHIVE_PROJECT_DESCRIPTION,
   ArchiveProjectToolSchema,
@@ -97,7 +99,7 @@ function toRemoteMcpError(error: unknown, fallback: string): McpError {
     error.status === 422 &&
     STABLE_CODE_PREFIX.test(error.apiMessage)
   ) {
-    return new McpError(ErrorCode.InvalidRequest, error.apiMessage);
+    return new McpError(ErrorCode.InvalidRequest, error.apiMessage, error.details);
   }
   return new McpError(ErrorCode.InternalError, error instanceof Error ? error.message : fallback);
 }
@@ -300,6 +302,19 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
     },
   );
 
+  // Compile-time guard (WFT #2478): every list_tasks filter the MCP schema
+  // accepts (bar `verbose`, which is not sent) must exist on the API-client
+  // TaskFilters, so a filter can never again be passed by casting around it.
+  const listTasksFiltersFit: [
+    Exclude<
+      keyof Omit<z.infer<typeof ListTasksMcpSchema>, 'verbose'>,
+      keyof import('../../cli/api/types.js').TaskFilters
+    >,
+  ] extends [never]
+    ? true
+    : false = true;
+  void listTasksFiltersFit;
+
   // Tool: list_tasks (paginated)
   server.registerTool(
     'list_tasks',
@@ -316,15 +331,13 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       // TaskFilters expects a comma-joined string, so we normalize it here.
       const { verbose, tags, ...rest } = parseToolArgs(ListTasksMcpSchema, args, 'list_tasks');
       try {
-        const filters = {
+        // WFT #2478: TaskFilters now carries `archived`, so the validated
+        // filters are assigned to it directly; no cast.
+        const filters: import('../../cli/api/types.js').TaskFilters = omitUndefined({
           ...rest,
-          ...(tags !== undefined && { tags: tags.join(',') }),
-        };
-        const page = await client.listTasksPaginated(
-          // Isolated SDK-boundary cast: `filters` is validated above; the
-          // API-client TaskFilters is a structural subset.
-          filters as unknown as import('../../cli/api/types.js').TaskFilters,
-        );
+          tags: tags?.join(','),
+        });
+        const page = await client.listTasksPaginated(filters);
         if (page.data.length === 0) {
           return {
             content: [
@@ -746,6 +759,14 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
     },
     async (args) => {
       const parsed = parseToolArgs(ArchiveProjectToolSchema, args, 'archive_project');
+      // WFT #2530: check reason/force with the service's own schema first, so
+      // `force` without a `reason` is the same InvalidParams error, with the
+      // same `archive_reason_required` text, as on stdio (not a REST 400
+      // wrapped as InternalError).
+      const body = ArchiveProjectSchema.safeParse({ reason: parsed.reason, force: parsed.force });
+      if (!body.success) {
+        throw convertToMcpError(validationErrorFromIssues(body.error.issues));
+      }
       try {
         const project = await client.archiveProject(
           parsed.id,

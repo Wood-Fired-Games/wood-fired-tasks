@@ -7,6 +7,10 @@
  * suite drives the command in-process via Commander so coverage attributes the
  * code to the right file.
  */
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Command } from 'commander';
 import { createCompletionsCommand } from '../commands/completions.js';
@@ -51,6 +55,97 @@ describe('createCompletionsCommand', () => {
     consoleLogSpy.mockRestore();
     consoleErrorSpy.mockRestore();
     exitSpy.mockRestore();
+  });
+
+  it('completes the archived project flags in bash and zsh (WFT #2478)', async () => {
+    await program.parseAsync(['node', 'tasks', 'completions', 'bash']);
+    const bash = consoleLogSpy.mock.calls[0][0] as string;
+    for (const flag of ['--include-archived', '--archived-only', '--reason', '--with-unfinished']) {
+      expect(bash).toContain(flag);
+    }
+
+    consoleLogSpy.mockClear();
+    await program.parseAsync(['node', 'tasks', 'completions', 'zsh']);
+    const zsh = consoleLogSpy.mock.calls[0][0] as string;
+    expect(zsh).toMatch(/list\)[\s\S]*?'--include-archived\[[^\]]+\]'[\s\S]*?;;/);
+    expect(zsh).toMatch(/project-list\)[\s\S]*?'--archived-only\[[^\]]+\]'[\s\S]*?;;/);
+    expect(zsh).toMatch(/project-archive\)[\s\S]*?'--reason\[[^\]]+\]:reason:'[\s\S]*?;;/);
+    expect(zsh).toMatch(/project-archive\)[\s\S]*?'--with-unfinished\[[^\]]+\]'[\s\S]*?;;/);
+    // The archive override is --with-unfinished; project-archive offers no
+    // --force of its own (the global --force only skips prompts).
+    const archiveCase = /project-archive\)([\s\S]*?);;/.exec(zsh)?.[1] ?? '';
+    expect(archiveCase).not.toContain("'--force[");
+  });
+
+  // WFT #2477 regression (verifier on PR #171): a lost space in
+  // `--"${cur}"` made compgen fail with "invalid option", so bash flag
+  // completion returned nothing although every flag string was present.
+  // These run the generated script in a real bash, not a string match.
+  describe('the generated bash completion actually completes (WFT #2477)', () => {
+    async function bashScript(): Promise<string> {
+      consoleLogSpy.mockClear();
+      await program.parseAsync(['node', 'tasks', 'completions', 'bash']);
+      return consoleLogSpy.mock.calls[0][0] as string;
+    }
+
+    /** Source the script, run _tasks_completions for `words`, return COMPREPLY + stderr. */
+    function complete(script: string, words: string[]): { reply: string[]; stderr: string } {
+      const dir = mkdtempSync(join(tmpdir(), 'tasks-completion-'));
+      const file = join(dir, 'tasks-completion.bash');
+      try {
+        writeFileSync(file, script);
+        const driver = [
+          'source "$1"; shift',
+          'COMP_WORDS=("$@")',
+          'COMP_CWORD=$(( ${#COMP_WORDS[@]} - 1 ))',
+          '_tasks_completions',
+          'printf "%s\\n" "${COMPREPLY[@]}"',
+        ].join('\n');
+        const result = spawnSync(
+          'bash',
+          ['--norc', '--noprofile', '-c', driver, 'bash', file, ...words],
+          {
+            encoding: 'utf8',
+          },
+        );
+        return {
+          reply: result.stdout.split('\n').filter((line) => line.length > 0),
+          stderr: result.stderr,
+        };
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+
+    it('completes project-archive --wi to --with-unfinished', async () => {
+      const { reply, stderr } = complete(await bashScript(), [
+        'tasks',
+        'project-archive',
+        '7',
+        '--wi',
+      ]);
+      expect(stderr).toBe('');
+      expect(reply).toEqual(['--with-unfinished']);
+    });
+
+    it('completes --status values, shells and command names without compgen errors', async () => {
+      const script = await bashScript();
+      const status = complete(script, ['tasks', 'list', '--status', 'in_']);
+      expect(status.stderr).toBe('');
+      expect(status.reply).toEqual(['in_progress']);
+      const shells = complete(script, ['tasks', 'completions', 'z']);
+      expect(shells.reply).toEqual(['zsh']);
+      const commands = complete(script, ['tasks', 'cre']);
+      expect(commands.reply).toEqual(['create']);
+    });
+
+    it('every compgen call ends its options with `-- "${cur}"`', async () => {
+      const lines = (await bashScript()).split('\n').filter((line) => line.includes('compgen'));
+      expect(lines.length).toBeGreaterThan(0);
+      for (const line of lines) {
+        expect(line, line.trim()).toMatch(/" -- "\$\{cur\}"\) \)$/);
+      }
+    });
   });
 
   it('emits a bash completion script containing all registered subcommands', async () => {

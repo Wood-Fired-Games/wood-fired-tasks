@@ -51,6 +51,12 @@ request body.
 | Already archived | Succeed as a no-op (200, no event), so agent retries are safe. |
 | Reason | Optional free text, max 500 characters, required only with `force`. |
 
+The refusal's 422 body carries the counts as data too:
+`details: { code: 'project_has_unfinished_tasks', total, counts: { open, in_progress, blocked, backlogged } }`
+(WFT #2530). `force` without `reason` is a validation error whose message
+opens with `archive_reason_required`: 400 on REST, `InvalidParams` with the
+same text on stdio and remote MCP.
+
 ### 2.3 What an archived project accepts
 
 | Operation | Recommendation |
@@ -92,10 +98,19 @@ project once, in one transaction:
 These writes carry `source: 'workflow'` and emit the usual `task.updated` and
 `task.status_changed` events. A task blocked by hand (no dependency edge), a
 task with an unfinished blocker, and a `blocked`, `backlogged` or `closed`
-parent are left alone. The pass is idempotent, a repeated unarchive emits no
-event and so runs nothing, and a project archived again before the event is
-handled is skipped. If any write in the pass fails, the whole pass rolls back
-and is logged; the project stays unarchived.
+parent are left alone. A task set to `blocked` by hand on top of blockers
+that were already all `done` is opened too: the pass cannot tell it from a
+task the archive held back (WFT #2532). The pass is idempotent, and a project
+archived again before the event is handled is skipped.
+
+Each candidate task is re-evaluated in its own transaction (WFT #2532). If its
+write fails, only that task's cascade rolls back and is logged with the task
+and project ids; the other tasks still change, and the project stays
+unarchived. A repeated unarchive of a project that is not archived emits no
+event but runs the pass again, which is the retry path for a task that
+failed. The pass runs wherever the unarchive runs: REST, the remote bridge
+(through REST) and the stdio MCP server all build the app with the same
+`createApp`, which starts the workflow engine.
 
 ### 2.5 Default visibility
 
@@ -120,14 +135,23 @@ not `delete_project` (`admin`). A token bound to one project may archive that
 project only; the existing project-binding table enforces this once the new
 routes are classified in it.
 
+Slack has no token scopes, so archive and unarchive from Slack require the
+Slack user to map to a tracker user (the `findBySlackUserId` mapping other
+Slack writes use). An unmapped user is refused with a clear message and
+nothing is written; there is no fall-back to the slack-bot account or the raw
+Slack id. `archived_by` is the mapped user's display name (WFT #2531).
+
 ### 2.7 Events and audit
 
 - Two new event types, `project.archived` and `project.unarchived`, carrying
   the full project. They are sent over SSE and are valid `on:` values for
   `wft-router` rules. `project.updated` is **not** also emitted.
 - Audit trail: the REST hook (`src/api/hooks/audit-trail.ts`) records every
-  non-GET request automatically, so the two new routes need no extra code. The
-  MCP producer (`src/mcp/audit-trail.ts`) needs one table entry per new tool.
+  non-GET request automatically. Its resource is derived from the route
+  pattern, which would record `archive` with no id; `archive` and `unarchive`
+  are therefore listed as instance actions, so the row is `projects` plus the
+  project id, as on MCP (WFT #2530). The MCP producer
+  (`src/mcp/audit-trail.ts`) needs one table entry per new tool.
 
 ## 3. Surfaces that must change
 
@@ -204,7 +228,7 @@ remote twin fails), `tool-count-drift.test.ts` (project tools go 5 → 7),
 | File | Change |
 | --- | --- |
 | `src/cli/api/client.ts` | `archiveProject`, `unarchiveProject`; listing helpers take `archived`. |
-| `src/cli/commands/project-archive.ts`, `project-unarchive.ts` (new) | `tasks project-archive <id> [--reason] [--force]`, `tasks project-unarchive <id>`. Registered in `src/cli/bin/tasks.ts`. |
+| `src/cli/commands/project-archive.ts`, `project-unarchive.ts` (new) | `tasks project-archive <id> [--reason <text>] [--with-unfinished]`, `tasks project-unarchive <id>`. Registered in `src/cli/bin/tasks.ts`. `--with-unfinished` sends `force: true` and requires `--reason` (refused before any request without one). |
 | `src/cli/commands/project-list.ts`, `list.ts` | `--include-archived`, `--archived-only`. |
 | `src/cli/commands/project-show.ts`, `src/cli/output/formatters.ts` | Show archived date, actor and reason. |
 | `src/cli/commands/completions.ts` | New commands and flags. |
@@ -212,6 +236,17 @@ remote twin fails), `tool-count-drift.test.ts` (project tools go 5 → 7),
 
 Guards: `cli-surface-coverage-link` runs `--help` for every registered
 command; `tests/smoke/cli-e2e.sh` gets an archive round trip.
+
+Flag name (changed from this design's first draft, WFT #2477 / PR #171):
+the draft spelled the override `--force`, but the program already has a
+global `--force` ("skip confirmation prompts"), and commander gives that flag
+to the program wherever it appears on the line. Reading both spellings, the
+first implementation, made the global flag plus a `--reason` force-archive a
+project with unfinished tasks (a reason is legitimate on an ordinary archive,
+so it does not show intent), and made the global flag alone turn a clean
+archive of a finished project into a 400 `archive_reason_required`. The
+override is therefore `--with-unfinished`; the global `--force` only skips
+prompts and never forces an archive.
 
 The direct-SQLite commands (`topology`, `stats`, `completed`, `wsjf`) do not
 go through REST. They need no change for this feature, but see WFT #2370:

@@ -20,7 +20,13 @@ import {
   CreateProjectSchema,
   UpdateProjectSchema,
 } from '../schemas/project.schema.js';
-import { ValidationError, BusinessError, NotFoundError, projectArchivedError } from './errors.js';
+import {
+  ValidationError,
+  BusinessError,
+  NotFoundError,
+  projectArchivedError,
+  validationErrorFromIssues,
+} from './errors.js';
 import { eventBus } from '../events/event-bus.js';
 import type { Database } from '../db/driver.js';
 import type { IProjectCharterHistoryRepository } from '../repositories/project-charter-history.repository.js';
@@ -42,6 +48,11 @@ export interface ProjectServiceDeps {
   charterHistory?: IProjectCharterHistoryRepository;
   db?: Database;
   taskRepo?: Pick<ITaskRepository, 'countNonTerminalByStatus'>;
+}
+
+/** Re-evaluates one unarchived project (implemented by the WorkflowEngine). */
+export interface UnarchiveReevaluator {
+  reevaluateProject(projectId: number): unknown;
 }
 
 /** Pagination plus the `archived` listing filter (default `exclude`). */
@@ -82,6 +93,19 @@ export class ProjectService {
     this.charterHistory = deps.charterHistory;
     this.db = deps.db;
     this.taskRepo = deps.taskRepo;
+  }
+
+  /**
+   * The unarchive re-evaluation (WFT #2532). A real unarchive reaches it
+   * through the `project.unarchived` event; a repeated (no-op) unarchive emits
+   * nothing, so it calls this directly — the retry path for a task whose
+   * re-evaluation failed. Bound late because the workflow engine is built
+   * after this service; `null` unbinds it.
+   */
+  private unarchiveReevaluator: UnarchiveReevaluator | null = null;
+
+  setUnarchiveReevaluator(reevaluator: UnarchiveReevaluator | null): void {
+    this.unarchiveReevaluator = reevaluator;
   }
 
   /**
@@ -205,15 +229,7 @@ export class ProjectService {
   archiveProject(id: number, input: unknown, actor: string): Project {
     const result = ArchiveProjectSchema.safeParse(input ?? {});
     if (!result.success) {
-      const fieldErrors: Record<string, string[]> = {};
-      result.error.issues.forEach((err) => {
-        const field = err.path.join('.');
-        if (!fieldErrors[field]) {
-          fieldErrors[field] = [];
-        }
-        fieldErrors[field].push(err.message);
-      });
-      throw new ValidationError(fieldErrors);
+      throw validationErrorFromIssues(result.error.issues);
     }
 
     const existing = this.projectRepo.findById(id);
@@ -243,7 +259,8 @@ export class ProjectService {
   /**
    * Unarchive a project: clears `archived_at`, `archived_by` and
    * `archive_reason`. A no-op that emits nothing when the project is not
-   * archived; otherwise emits `project.unarchived` exactly once (never
+   * archived (it only re-runs the re-evaluation, see `setUnarchiveReevaluator`);
+   * otherwise emits `project.unarchived` exactly once (never
    * `project.updated`). `actor` is the authenticated caller.
    */
   unarchiveProject(id: number, actor: string): Project {
@@ -259,6 +276,10 @@ export class ProjectService {
         data: project,
         metadata: { source: 'user', actor },
       });
+    } else {
+      // Nothing changed, so no event: re-run the idempotent re-evaluation so
+      // a task that failed on the first pass gets another try (WFT #2532).
+      this.unarchiveReevaluator?.reevaluateProject(id);
     }
     return project;
   }
@@ -279,6 +300,14 @@ export class ProjectService {
       `${PROJECT_HAS_UNFINISHED_TASKS_CODE}: project ${projectId} has ${total} unfinished ` +
         `task${total === 1 ? '' : 's'} (${perStatus.join(', ')}); finish or close them, ` +
         'or archive with force: true and a reason',
+      // WFT #2530: the same counts, machine-readable.
+      {
+        code: PROJECT_HAS_UNFINISHED_TASKS_CODE,
+        total,
+        counts: Object.fromEntries(
+          NON_TERMINAL_TASK_STATUSES.map((status) => [status, counts[status]]),
+        ),
+      },
     );
   }
 

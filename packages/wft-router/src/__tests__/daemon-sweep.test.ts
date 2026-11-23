@@ -90,11 +90,21 @@ function claimingRegistry(record: KickRecord): HandlerRegistry {
   };
 }
 
-/** A fake fetch serving `GET /api/v1/tasks` with a fixed row set. */
+/**
+ * A fake fetch serving `GET /api/v1/tasks` with a fixed row set. The sweep's
+ * archived check (`GET /api/v1/projects/:id`) is answered with a live
+ * (unarchived) project and recorded in `calls` like any other request.
+ */
 function taskListFetch(rows: readonly Record<string, unknown>[], calls: string[]): typeof fetch {
   return (async (input: RequestInfo | URL): Promise<Response> => {
     const url = String(input);
     calls.push(url);
+    if (new URL(url).pathname.startsWith('/api/v1/projects/')) {
+      return new Response(JSON.stringify({ archived: false }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
     const body = JSON.stringify({ data: rows, total: rows.length, limit: 500, offset: 0 });
     return new Response(body, {
       status: 200,
@@ -181,11 +191,13 @@ describe('WftRouterDaemon — cold-start sweep (task #1005)', () => {
     // Deterministic sweep identity: sweep:<rule>:<bucket>, bucket =
     // floor(10_000_000 / 60_000) = 166.
     expect(record.kicks[0]).toBe('sweep:wake-on-backlog:166');
-    // The query was narrowed server-side to the open backlog of project 5.
-    expect(calls).toHaveLength(1);
-    expect(calls[0]).toContain('/api/v1/tasks?');
-    expect(calls[0]).toContain('status=open');
-    expect(calls[0]).toContain('project_id=5');
+    // One archived check on project 5, then the query narrowed server-side
+    // to the open backlog of project 5.
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toContain('/api/v1/projects/5');
+    expect(calls[1]).toContain('/api/v1/tasks?');
+    expect(calls[1]).toContain('status=open');
+    expect(calls[1]).toContain('project_id=5');
     store.close();
   });
 
@@ -218,7 +230,9 @@ describe('WftRouterDaemon — cold-start sweep (task #1005)', () => {
 
     // The sweep RAN (a second task-list query happened) but the dispatch was
     // suppressed by the idempotency claim — still exactly one kick total.
-    expect(calls).toHaveLength(2);
+    // Each sweep is one archived check plus one task-list query.
+    expect(calls).toHaveLength(4);
+    expect(calls.filter((u) => u.includes('/api/v1/tasks?'))).toHaveLength(2);
     expect(record.kicks).toHaveLength(1);
     expect(record.suppressed).toEqual(['sweep:wake-on-backlog:166']);
     store.close();

@@ -67,7 +67,11 @@ Rules the server enforces (respect them as you build the object):
 1. **Resolve the project**
    - Take the project id or name from `$ARGUMENTS`. If absent, call
      `wood-fired-tasks:list_projects` and ask the user (via `AskUserQuestion`)
-     which project to charter, then STOP and wait for the choice.
+     which project to charter, then STOP and wait for the choice. The list
+     hides archived projects by default; pass `archived: "include"` only when
+     the user asks for them. An archived project is read-only (its
+     `update_project` is refused with `project_archived`), so if `get_project`
+     shows `archived: true`, stop and tell the user to unarchive it first.
    - Call `wood-fired-tasks:get_project` for the chosen project. If it already
      has a `value_charter`, this is a **re-interview** — go to Step 1a. If it has
      no charter, this is a first-time interview — continue at Step 2.

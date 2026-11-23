@@ -262,7 +262,9 @@ export function formatProjectTable(projects: ProjectResponse[]): string {
         : project.description
       : '-';
 
-    table.push([project.id, project.name, desc, new Date(project.created_at).toLocaleDateString()]);
+    // Archived project state (WFT #2478): mark archived rows in the name column.
+    const name = project.archived === true ? `${project.name} [archived]` : project.name;
+    table.push([project.id, name, desc, new Date(project.created_at).toLocaleDateString()]);
   }
 
   return table.toString();
@@ -282,6 +284,17 @@ export function formatProjectDetail(project: ProjectResponse): string {
   lines.push(`${bold('Description:')}  ${project.description || '-'}`);
   lines.push(`${bold('Created:')}      ${new Date(project.created_at).toLocaleString()}`);
   lines.push(`${bold('Updated:')}      ${new Date(project.updated_at).toLocaleString()}`);
+
+  // Archived project state (WFT #2478): date, actor and reason, in the same
+  // shape as the MCP get_project summary. Absent on a live project and on a
+  // server that predates the feature.
+  if (project.archived === true && project.archived_at) {
+    const by = project.archived_by ? ` by ${project.archived_by}` : '';
+    const reason = project.archive_reason ? ` (reason: ${project.archive_reason})` : '';
+    lines.push(
+      `${bold('Archived:')}     ${new Date(project.archived_at).toLocaleString()}${by}${reason}`,
+    );
+  }
 
   // Configurable Task Models (Task 12): show the per-project model policy when
   // configured. Pretty-printed JSON, indented under the label. `null`/absent

@@ -17,13 +17,15 @@ This skill calls tools on the `wood-fired-tasks` MCP server. The doc uses shorth
    - `--limit N` (optional integer, max 200, default 50). On an invalid value: "Error: --limit must be an integer between 1 and 200".
    - `--project <name-or-id>` (optional). Scopes the search to one project. If numeric or `#`-prefixed → treat as project ID. Otherwise → case-insensitive partial match against project names (call `wood-fired-tasks:list_projects` and pick the unique match; if 0 or >1 match: error).
    - `--all` (optional flag). Bypasses the 3-character minimum below.
+   - `--archived <exclude|include|only>` (optional, default `exclude`). Without `--project`, tasks of archived projects are omitted; `include` adds them, `only` returns nothing else. An explicit `--project` always searches that project, archived or not.
+   - Project-name matching uses the default `list_projects`, which hides archived projects; call it with `archived: "include"` when the user names an archived project or passes `--archived include|only`.
 
 2. **Validate keyword length** — minimum 3 characters unless `--all` is set.
    - If keyword is missing or empty: "Error: Search keyword required".
    - If keyword length < 3 and `--all` is NOT set: "Error: keyword must be at least 3 chars (or use --all)". Stop.
    - `--all` allows a 1-2 char or empty keyword for full-scan use cases (e.g. `--project 15 --all` to list every task in a project).
 
-3. **Build filter** — `{ search: keyword, limit: <limit>, project_id?: <project-id> }`. The `limit` is the resolved cap (user's `--limit` value or 50 default). When `--project` was given as a name, substitute the resolved ID from step 1.
+3. **Build filter** — `{ search: keyword, limit: <limit>, project_id?: <project-id>, archived?: <archived> }` (send `archived` only when `--archived` was given, e.g. `archived: "include"`). The `limit` is the resolved cap (user's `--limit` value or 50 default). When `--project` was given as a name, substitute the resolved ID from step 1.
 
 4. **Call** `wood-fired-tasks:list_tasks` with the filter built in step 3.
 

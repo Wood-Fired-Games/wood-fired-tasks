@@ -64,7 +64,7 @@ _tasks_completions() {
 
   # Complete flags
   if [[ "\${cur}" == -* ]]; then
-    COMPREPLY=( $(compgen -W "\${global_flags} --status --priority --assignee --tags --search --title --description --project" -- "\${cur}") )
+    COMPREPLY=( $(compgen -W "\${global_flags} --status --priority --assignee --tags --search --title --description --project --include-archived --archived-only --reason --with-unfinished" -- "\${cur}") )
     return 0
   fi
 
@@ -121,6 +121,22 @@ _tasks() {
             '--assignee[Filter by assignee]:assignee:' \\
             '--tags[Filter by tags]:tags:' \\
             '--search[Search text]:search:' \\
+            '--include-archived[Also list tasks of archived projects]' \\
+            '--archived-only[List only tasks of archived projects]' \\
+            $global_flags
+          ;;
+        project-list)
+          _arguments \\
+            '--include-archived[Also list archived projects]' \\
+            '--archived-only[List only archived projects]' \\
+            '--limit[Max rows]:limit:' \\
+            '--offset[Offset]:offset:' \\
+            $global_flags
+          ;;
+        project-archive)
+          _arguments \\
+            '--reason[Why the project is archived]:reason:' \\
+            '--with-unfinished[Archive although tasks are unfinished (requires --reason)]' \\
             $global_flags
           ;;
         create|subtask-create)

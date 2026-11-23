@@ -43,6 +43,8 @@ const KNOWN_MCP_TOOLS = new Set([
   'update_project',
   'list_projects',
   'delete_project',
+  'archive_project',
+  'unarchive_project',
   'add_dependency',
   'remove_dependency',
   'get_dependencies',

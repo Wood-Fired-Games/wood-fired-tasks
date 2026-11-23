@@ -274,7 +274,16 @@ fi
 # REPLACES itself with node. Without exec, $! is the subshell's pid, not
 # node's — when the cleanup trap kills the subshell, the orphaned node
 # survives bound to the port, wedging the next run with EADDRINUSE.
+#
+# Hermetic auth config: the server refuses to boot when only some OIDC_*
+# variables are set ("OIDC_* must all be set together"), and a developer
+# shell can carry one (e.g. OIDC_CLIENT_ID for a CLI login). This smoke
+# authenticates with API_KEYS + a PAT only, so drop every ambient OIDC_*
+# variable from the server's environment.
 (
+  while IFS= read -r oidc_var; do
+    unset "${oidc_var}"
+  done < <(compgen -e | grep '^OIDC_' || true)
   cd "${server_workdir}" && \
   API_KEYS="${api_key}:${legacy_user_label}" \
   DATABASE_PATH="${tmp_db}" \
@@ -635,6 +644,106 @@ if [ "${post_rc}" -eq 0 ]; then
 fi
 record_pass "i) delete ${tid} (force) + show now exits non-zero (rc=${post_rc})"
 rm -f "${do_}" "${de_}"
+
+# ----- Step 3 (round-trip k): archived project state (WFT #2483) ---------------
+# project-archive → hidden from project-list → create refused with
+# project_archived → project-unarchive → listed again. The project still has
+# unfinished tasks (dep-src/dep-dst), so the global `--force` (skip prompts)
+# must NOT archive it; `--with-unfinished --reason` does.
+echo "[e2e] step 3k0: tasks --force project-archive ${pid} --reason ... (unfinished tasks) is refused"
+fo="$(mktemp)"; fe="$(mktemp)"
+set +e
+"${bin_name}" --json --force --token "${pat}" \
+  project-archive "${pid}" --reason "global force is not an archive override" >"${fo}" 2>"${fe}"
+force_rc=$?
+set -e
+if [ "${force_rc}" -eq 0 ]; then
+  record_fail "project-archive (global --force)" "global --force archived a project with unfinished tasks"
+  cat "${fo}" >&2
+  exit 1
+fi
+if ! grep -q "project_has_unfinished_tasks" "${fo}" "${fe}"; then
+  record_fail "project-archive (global --force)" "refusal does not carry project_has_unfinished_tasks"
+  cat "${fo}" "${fe}" >&2
+  exit 1
+fi
+record_pass "k0) global --force + --reason does not force an archive (rc=${force_rc})"
+rm -f "${fo}" "${fe}"
+
+echo "[e2e] step 3k: tasks project-archive ${pid} --with-unfinished --reason 'e2e round trip'"
+ao="$(mktemp)"; ae="$(mktemp)"
+if ! run_cli "${ao}" "${ae}" -- \
+  "${bin_name}" --json --token "${pat}" \
+  project-archive "${pid}" --with-unfinished --reason "e2e round trip"; then
+  record_fail "project-archive" "non-zero exit"
+  cat "${ae}" >&2
+  exit 1
+fi
+if [ "$(jq -r '.data.project.archived' "${ao}")" != "true" ]; then
+  record_fail "project-archive" "response does not show archived=true"
+  cat "${ao}" >&2
+  exit 1
+fi
+record_pass "k1) project-archive ${pid} --with-unfinished --reason → archived=true"
+rm -f "${ao}" "${ae}"
+
+# project_listed <pid> <file>: 0 when the project-list JSON in <file> has <pid>.
+project_listed() {
+  jq -e --argjson id "$1" '[.data[].id] | index($id) != null' "$2" >/dev/null
+}
+
+lo2="$(mktemp)"; le2="$(mktemp)"
+if ! run_cli "${lo2}" "${le2}" -- "${bin_name}" --json --token "${pat}" project-list; then
+  record_fail "project-list (archived hidden)" "non-zero exit"
+  cat "${le2}" >&2
+  exit 1
+fi
+if project_listed "${pid}" "${lo2}"; then
+  record_fail "project-list (archived hidden)" "archived project ${pid} is still listed"
+  cat "${lo2}" >&2
+  exit 1
+fi
+record_pass "k2) project-list hides archived project ${pid}"
+rm -f "${lo2}" "${le2}"
+
+co="$(mktemp)"; ce="$(mktemp)"
+set +e
+"${bin_name}" --json --token "${pat}" \
+  create --project "${pid}" --title "into an archived project" --created-by "${legacy_user_label}" \
+  >"${co}" 2>"${ce}"
+create_rc=$?
+set -e
+if [ "${create_rc}" -eq 0 ]; then
+  record_fail "create (archived)" "create into archived project ${pid} exited 0"
+  cat "${co}" >&2
+  exit 1
+fi
+if ! grep -q "project_archived" "${co}" "${ce}"; then
+  record_fail "create (archived)" "refusal does not carry the project_archived code"
+  cat "${co}" "${ce}" >&2
+  exit 1
+fi
+record_pass "k3) create into archived project refused with project_archived (rc=${create_rc})"
+rm -f "${co}" "${ce}"
+
+uo="$(mktemp)"; ue="$(mktemp)"
+if ! run_cli "${uo}" "${ue}" -- "${bin_name}" --json --token "${pat}" project-unarchive "${pid}"; then
+  record_fail "project-unarchive" "non-zero exit"
+  cat "${ue}" >&2
+  exit 1
+fi
+if ! run_cli "${uo}" "${ue}" -- "${bin_name}" --json --token "${pat}" project-list; then
+  record_fail "project-list (unarchived)" "non-zero exit"
+  cat "${ue}" >&2
+  exit 1
+fi
+if ! project_listed "${pid}" "${uo}"; then
+  record_fail "project-unarchive" "project ${pid} is not listed after unarchive"
+  cat "${uo}" >&2
+  exit 1
+fi
+record_pass "k4) project-unarchive ${pid} → listed again"
+rm -f "${uo}" "${ue}"
 
 # ----- Step 3 (round-trip j): project-delete + verify gone --------------------
 echo "[e2e] step 3j: tasks project-delete ${pid} --force"

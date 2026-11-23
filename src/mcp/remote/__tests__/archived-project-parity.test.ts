@@ -163,6 +163,17 @@ describe('remote MCP: archived project state (stdio parity)', () => {
       expect(result.isError).toBe(true);
       expect(app.projectService.getProject(projectId).archived).toBe(false);
     });
+
+    it('force without a reason is the same InvalidParams error with a stable code on both transports (WFT #2530)', async () => {
+      const viaRemote = await call(remote, 'archive_project', { id: projectId, force: true });
+      const viaStdio = await call(stdio, 'archive_project', { id: projectId, force: true });
+
+      // -32602 is InvalidParams.
+      expect(text(viaStdio)).toBe(
+        'MCP error -32602: Validation failed: reason: archive_reason_required: reason is required when force is true',
+      );
+      expect(text(viaRemote)).toBe(text(viaStdio));
+    });
   });
 
   describe('the freeze refusal', () => {

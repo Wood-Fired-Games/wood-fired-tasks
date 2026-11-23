@@ -370,6 +370,44 @@ describe('formatters: project renderers', () => {
     const out = formatProjectDetail({ ...baseProject, description: null });
     expect(out).toMatch(/Description:\s+-/);
   });
+
+  // WFT #2478: archived state in project-show and project-list.
+  const archivedAt = '2026-11-23T12:00:00.000Z';
+  const archivedProject = {
+    ...baseProject,
+    archived: true,
+    archived_at: archivedAt,
+    archived_by: 'alice',
+    archive_reason: 'shipped in the spring',
+  };
+
+  it('formatProjectDetail shows the archived date, actor and reason', async () => {
+    const { formatProjectDetail } = await loadModule();
+    const out = formatProjectDetail(archivedProject);
+    expect(out).toContain(
+      `Archived:     ${new Date(archivedAt).toLocaleString()} by alice (reason: shipped in the spring)`,
+    );
+  });
+
+  it('formatProjectDetail omits the reason when none was given', async () => {
+    const { formatProjectDetail } = await loadModule();
+    const out = formatProjectDetail({ ...archivedProject, archive_reason: null });
+    expect(out).toContain(`Archived:     ${new Date(archivedAt).toLocaleString()} by alice`);
+    expect(out).not.toContain('reason:');
+  });
+
+  it('formatProjectDetail has no archived line for a live project or an old server', async () => {
+    const { formatProjectDetail } = await loadModule();
+    expect(formatProjectDetail({ ...baseProject, archived: false })).not.toContain('Archived:');
+    expect(formatProjectDetail(baseProject)).not.toContain('Archived:');
+  });
+
+  it('formatProjectTable marks an archived project and only that one', async () => {
+    const { formatProjectTable } = await loadModule();
+    const out = formatProjectTable([archivedProject, { ...baseProject, id: 2, name: 'live-one' }]);
+    expect(out).toContain('wood-fired-tasks [archived]');
+    expect(out).not.toContain('live-one [archived]');
+  });
 });
 
 describe('formatters: dependency + comment + health', () => {

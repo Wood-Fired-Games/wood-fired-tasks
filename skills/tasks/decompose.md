@@ -109,7 +109,10 @@ Parse `$ARGUMENTS`. Supported flags: `--project <id>`, `--goal "..."`,
 
 - `--project <id>` — required, positive integer. Confirm it resolves via
   `wood-fired-tasks:list_projects`; refuse with a usage error if it does
-  not exist.
+  not exist. If it matches only under `archived: "only"`, the project is
+  archived and read-only (every `create_task` would be refused with
+  `project_archived`): stop before recon with the archived message in
+  [loop-shared.md §U](loop-shared.md#u-archived-project-guard-run-start-and-mid-run).
 - `--goal "..."` — required, non-empty, **≤ 200 words** (~≤ 1500 chars).
   Over the cap ⇒ refuse and ask the user to tighten the goal.
 - `--success "..."` — **3–5 entries required**. Fewer than 3 or more than
