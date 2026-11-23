@@ -4,6 +4,7 @@ import { createTestApp } from '../../index.js';
 import { createMcpServer } from '../server.js';
 import { createServer } from '../../api/server.js';
 import { RestClient } from '../remote/rest-client.js';
+import { registerRemoteTools } from '../remote/register-tools.js';
 import { seedAuth } from '../../api/__tests__/helpers/auth.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
@@ -726,5 +727,95 @@ describe('Skill File Validation', () => {
         `${filename}: Should contain numbered steps (e.g., "1. ") or numbered headings (e.g., "### 1. ")`,
       ).toBe(true);
     }
+  });
+});
+
+// --- Archived project state (docs/design/project-archived-state.md §2.5, §3.5) ---
+// Reachability gate for the `archived` filter on the REMOTE list_tasks path:
+// the real remote tool handler (register-tools.ts) → RestClient → fetch → a
+// live Fastify server. Before the REST query schema learned `archived`, the
+// remote tool forwarded the parameter and the server silently dropped it.
+describe('E2E Regression: archived filter on remote list_tasks reaches the REST server', () => {
+  type RemoteHandler = (args: Record<string, unknown>) => Promise<{
+    structuredContent?: { tasks?: Array<{ id: number }>; total?: number };
+  }>;
+
+  let server: FastifyInstance;
+  let restApp: App;
+  let listTasks: RemoteHandler;
+  let activeTaskId: number;
+  let archivedTaskId: number;
+  let archivedProjectId: number;
+
+  const ids = (r: Awaited<ReturnType<RemoteHandler>>) =>
+    (r.structuredContent?.tasks ?? []).map((t) => t.id).sort();
+
+  beforeAll(async () => {
+    const result = await createServer({ dbPath: ':memory:' });
+    server = result.server;
+    restApp = result.app;
+    const baseUrl = await server.listen({ port: 0, host: '127.0.0.1' });
+    const remoteClient = new RestClient(baseUrl, seedAuth(restApp.db).token);
+
+    const handlers = new Map<string, RemoteHandler>();
+    registerRemoteTools(
+      {
+        registerTool: (name: string, _config: unknown, cb: RemoteHandler) => {
+          handlers.set(name, cb);
+          return { name };
+        },
+      } as unknown as Parameters<typeof registerRemoteTools>[0],
+      remoteClient,
+    );
+    listTasks = handlers.get('list_tasks')!;
+
+    const active = restApp.projectService.createProject({ name: 'Remote Active' });
+    const archived = restApp.projectService.createProject({ name: 'Remote Archived' });
+    archivedProjectId = archived.id;
+    activeTaskId = restApp.taskService.createTask({
+      title: 'remote active task',
+      project_id: active.id,
+      created_by: 'tester',
+    }).id;
+    archivedTaskId = restApp.taskService.createTask({
+      title: 'remote archived task',
+      project_id: archived.id,
+      created_by: 'tester',
+    }).id;
+    restApp.projectService.archiveProject(archived.id, { force: true, reason: 't' }, 'tester');
+  }, 30_000);
+
+  afterAll(async () => {
+    await server.close();
+    restApp.dispose();
+  });
+
+  it('omits tasks of archived projects by default', async () => {
+    const result = await listTasks({});
+
+    expect(ids(result)).toEqual([activeTaskId]);
+    expect(result.structuredContent?.total).toBe(1);
+  });
+
+  it('archived=exclude omits them', async () => {
+    expect(ids(await listTasks({ archived: 'exclude' }))).toEqual([activeTaskId]);
+  });
+
+  it('archived=include returns them too', async () => {
+    const result = await listTasks({ archived: 'include' });
+
+    expect(ids(result)).toEqual([activeTaskId, archivedTaskId].sort());
+    expect(result.structuredContent?.total).toBe(2);
+  });
+
+  it('archived=only returns nothing else', async () => {
+    const result = await listTasks({ archived: 'only' });
+
+    expect(ids(result)).toEqual([archivedTaskId]);
+    expect(result.structuredContent?.total).toBe(1);
+  });
+
+  it('an explicit project_id of an archived project returns its tasks', async () => {
+    expect(ids(await listTasks({ project_id: archivedProjectId }))).toEqual([archivedTaskId]);
   });
 });

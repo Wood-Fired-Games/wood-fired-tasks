@@ -10,6 +10,7 @@ import {
   // gate what clients can send.
   CreateTaskClientSchema,
   UpdateTaskClientSchema,
+  ArchivedFilterSchema,
 } from '../../../schemas/task.schema.js';
 import { idempotencyKeyHeaderSchema } from '../../../schemas/idempotency.schema.js';
 import {
@@ -65,6 +66,11 @@ const QueryTaskFiltersSchema = z.object({
   // so future heavy fields (e.g. `?include=verification,history`) plug in
   // without another query parameter.
   include: z.string().optional(),
+  // Archived project state: whether tasks of archived projects are listed —
+  // `exclude` (default), `include` or `only`. Applies to plain listing and to
+  // `search` alike. Ignored when `project_id` is given: asking for a project
+  // by id always returns its tasks, archived or not.
+  archived: ArchivedFilterSchema,
   limit: z.coerce.number().int().positive().max(500).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

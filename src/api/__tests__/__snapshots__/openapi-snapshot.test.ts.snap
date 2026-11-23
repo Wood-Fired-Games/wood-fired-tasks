@@ -7737,6 +7737,20 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
           },
           {
             "in": "query",
+            "name": "archived",
+            "required": false,
+            "schema": {
+              "default": "exclude",
+              "enum": [
+                "exclude",
+                "include",
+                "only",
+              ],
+              "type": "string",
+            },
+          },
+          {
+            "in": "query",
             "name": "limit",
             "required": false,
             "schema": {

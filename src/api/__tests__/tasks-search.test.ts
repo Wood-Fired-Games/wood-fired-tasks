@@ -133,4 +133,62 @@ describe('Task search validation (REST)', () => {
     const body = response.json() as { data: Array<{ title: string }> };
     expect(body.data.some((t) => t.title.includes('migration'))).toBe(true);
   });
+
+  // --- Archived project state (docs/design/project-archived-state.md §2.5) ---
+
+  describe('search and the archived filter', () => {
+    let archivedProjectId: number;
+    let archivedTaskId: number;
+
+    const search = async (query: string) => {
+      const response = await server.inject({
+        method: 'GET',
+        url: `/api/v1/tasks?search=zebracorn${query}`,
+        headers,
+      });
+      return {
+        status: response.statusCode,
+        body: response.json() as { data: Array<{ id: number }>; total: number },
+      };
+    };
+
+    beforeAll(() => {
+      archivedProjectId = app.projectService.createProject({ name: 'Search Archived' }).id;
+      archivedTaskId = app.taskService.createTask({
+        title: 'zebracorn regression',
+        project_id: archivedProjectId,
+        created_by: 'tester',
+      }).id;
+      app.projectService.archiveProject(archivedProjectId, { force: true, reason: 't' }, 'tester');
+    });
+
+    it('search omits tasks of archived projects by default', async () => {
+      const { status, body } = await search('');
+
+      expect(status).toBe(200);
+      expect(body.data).toEqual([]);
+      expect(body.total).toBe(0);
+    });
+
+    it('search with archived=include finds the task in the archived project', async () => {
+      const { status, body } = await search('&archived=include');
+
+      expect(status).toBe(200);
+      expect(body.data.map((t) => t.id)).toEqual([archivedTaskId]);
+      expect(body.total).toBe(1);
+    });
+
+    it('search with archived=only finds only tasks of archived projects', async () => {
+      const { body } = await search('&archived=only');
+
+      expect(body.data.map((t) => t.id)).toEqual([archivedTaskId]);
+    });
+
+    it('search with an explicit project_id of the archived project finds its task', async () => {
+      const { status, body } = await search(`&project_id=${archivedProjectId}`);
+
+      expect(status).toBe(200);
+      expect(body.data.map((t) => t.id)).toEqual([archivedTaskId]);
+    });
+  });
 });
