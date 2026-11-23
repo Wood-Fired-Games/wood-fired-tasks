@@ -10,6 +10,7 @@ import { WsjfRescoreRepository } from '../../repositories/wsjf-rescore.repositor
 import { TaskService } from '../task.service.js';
 import { TopologyService } from '../topology.service.js';
 import { WsjfRescoreService } from '../wsjf-rescore.service.js';
+import { BusinessError } from '../errors.js';
 import type { ScoreSubmission } from '../wsjf.service.js';
 import type { ValueCharter, WsjfWriteDTO } from '../../types/task.js';
 import type { WsjfLocks } from '../../types/wsjf.js';
@@ -328,5 +329,63 @@ describe('WSJF rescore service (#641)', () => {
     // The good task still changed + committed.
     expect(result.tasksChanged).toBe(1);
     expect(result.results.map((r) => r.taskId)).toEqual([good]);
+  });
+
+  // --- Archived project state (docs/design/project-archived-state.md §2.3) ---
+
+  describe('archived project write guard', () => {
+    it('rejects rescore of an archived project with a project_archived message and writes nothing', () => {
+      const taskId = scoredTask('Fix checkout', autoWsjf());
+      const before = taskRepo.findById(taskId);
+      const historyBefore = historyRepo.countByTaskId(taskId);
+      projectRepo.archive(projectId, 'alice', 'shipped');
+
+      let thrown: unknown;
+      try {
+        rescore.rescore(projectId, [{ taskId, submission: submission() }]);
+      } catch (err) {
+        thrown = err;
+      }
+
+      expect(thrown).toBeInstanceOf(BusinessError);
+      expect((thrown as BusinessError).message).toMatch(/^project_archived/);
+      expect(taskRepo.findById(taskId)).toEqual(before);
+      expect(historyRepo.countByTaskId(taskId)).toBe(historyBefore);
+      expect(db.prepare('SELECT COUNT(*) AS c FROM wsjf_rescore_run').get()).toEqual({ c: 0 });
+    });
+
+    it('rejects a rescore of an archived project even with no submissions', () => {
+      projectRepo.archive(projectId, 'alice', 'shipped');
+
+      expect(() => rescore.rescore(projectId, [])).toThrow(/^project_archived/);
+    });
+
+    it('collectRescoreSet (a read) still works on an archived project', () => {
+      const taskId = scoredTask('Fix checkout', autoWsjf());
+      projectRepo.archive(projectId, 'alice', 'shipped');
+
+      expect(rescore.collectRescoreSet(projectId).tasks.map((t) => t.id)).toEqual([taskId]);
+    });
+
+    it('rejects a direct WSJF score write on a task in an archived project', () => {
+      const taskId = scoredTask('Fix checkout', autoWsjf());
+      const before = taskRepo.findById(taskId);
+      projectRepo.archive(projectId, 'alice', 'shipped');
+
+      expect(() =>
+        taskService.updateTask(taskId, { wsjf: autoWsjf({ value: 5, manual: true }) }),
+      ).toThrow(/^project_archived/);
+      expect(taskRepo.findById(taskId)).toEqual(before);
+    });
+
+    it('rescore works again after unarchive', () => {
+      const taskId = scoredTask('Fix checkout', autoWsjf());
+      projectRepo.archive(projectId, 'alice', 'shipped');
+      projectRepo.unarchive(projectId);
+
+      const result = rescore.rescore(projectId, [{ taskId, submission: submission() }]);
+
+      expect(result.tasksEvaluated).toBe(1);
+    });
   });
 });
