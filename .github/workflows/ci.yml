@@ -32,7 +32,14 @@ jobs:
       # Tests assert on packaged assets (dist/skills/tasks, dist/skills/agents)
       # resolved via the asset resolver, so dist/ must be built first.
       - run: npm run build
+      # WFT #2551: the zsh completion test executes the generated script in a
+      # real zsh. WFT_REQUIRE_ZSH=1 makes a missing zsh fail the test here
+      # instead of skipping it.
+      - name: Install zsh (completion test)
+        run: command -v zsh || (sudo apt-get update -q && sudo apt-get install -y -q zsh)
       - run: npm test
+        env:
+          WFT_REQUIRE_ZSH: '1'
 
   coverage:
     runs-on: ubuntu-latest
