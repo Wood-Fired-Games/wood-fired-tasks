@@ -100,18 +100,37 @@ These writes carry `source: 'workflow'` and emit the usual `task.updated` and
 `task.status_changed` events. A task blocked by hand (no dependency edge), a
 task with an unfinished blocker, and a `blocked`, `backlogged` or `closed`
 parent are left alone. A task set to `blocked` by hand on top of blockers
-that were already all `done` is opened too: the pass cannot tell it from a
-task the archive held back (WFT #2532). The pass is idempotent, and does
+that were already all `done` is opened too by a real unarchive: the pass
+cannot tell it from a task the archive held back (WFT #2532). The pass is idempotent, and does
 nothing to a project that is archived.
 
 Each candidate task is re-evaluated in its own transaction (WFT #2532). If its
 write fails, only that task's cascade rolls back and is logged with the task
 and project ids; the other tasks still change, and the project stays
-unarchived. A repeated unarchive of a project that is not archived emits no
-event but runs the pass again, which is the retry path for a task that
-failed. The pass runs wherever the unarchive runs: REST, the remote bridge
+unarchived. The pass runs wherever the unarchive runs: REST, the remote bridge
 (through REST), the stdio MCP server and Slack all reach the same
 `ProjectService`, which `createApp` binds to the workflow engine.
+
+**A repeated unarchive retries only what failed** (WFT #2543, option B,
+decided by Stuart 2026-11-23). The workflow engine remembers, in memory and
+per project, the tasks whose re-evaluation rolled back in this server
+process. A repeated (no-op) unarchive of a project that is not archived emits
+no event and does **not** run the pass: it re-attempts only those remembered
+tasks. So it never opens a task blocked by hand, and on a project with
+nothing remembered — including one that was never archived — it changes
+nothing.
+
+- A real unarchive runs the pass and replaces the remembered tasks for that
+  project with its own failures.
+- A remembered task is forgotten when its retry succeeds (or it is no longer
+  a candidate, or no longer in the project), when it is deleted, or when the
+  project is archived again.
+- **After a server restart nothing is remembered.** A repeated unarchive then
+  retries nothing and reports nothing failed, although a task the caller was
+  told about may still be held back. The way out is to archive the project
+  again (with `force` and a reason if it has unfinished tasks) and unarchive
+  it: the real unarchive runs the full pass. WFT #2553 replaces the memory
+  with a table so the retry survives a restart; it is not in 2.10.0.
 
 **A partial failure is visible to the caller** (WFT #2542). The unarchive
 still succeeds (200), and its result names the tasks whose re-evaluation
@@ -125,7 +144,8 @@ rolled back, in one shape on every surface: the project's fields plus
 | CLI `tasks project-unarchive` | a warning on stderr (exit status stays 0); with `--json`, the field inside `project` |
 | Slack `/tasks project-unarchive` | a warning block |
 
-The warning names the tasks and says to unarchive again to retry them. A
+The warning names the tasks and says to unarchive again to retry them (in the
+same server process; see the restart rule above). A
 response from a server older than #2542 has no field; clients treat it as
 absent, not as "nothing failed".
 
