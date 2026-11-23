@@ -151,6 +151,8 @@ export interface McpAuditTarget {
  * | claim_task         | PATCH  /api/v1/tasks/:id                      | tasks         |
  * | create_project     | POST   /api/v1/projects                       | projects      |
  * | update_project     | PATCH  /api/v1/projects/:id                   | projects      |
+ * | archive_project    | POST   /api/v1/projects/:id/archive           | projects      |
+ * | unarchive_project  | POST   /api/v1/projects/:id/unarchive         | projects      |
  * | delete_project     | DELETE /api/v1/projects/:id                   | projects      |
  * | add_dependency     | POST   /api/v1/tasks/:id/dependencies         | dependencies  |
  * | remove_dependency  | DELETE /api/v1/tasks/:id/dependencies/:blocksTaskId | dependencies |
@@ -168,6 +170,8 @@ export const MCP_AUDIT_TARGETS = {
   // --- project-tools.ts ----------------------------------------------------
   create_project: { resourceType: 'projects', resourceIdArg: null },
   update_project: { resourceType: 'projects', resourceIdArg: 'id' },
+  archive_project: { resourceType: 'projects', resourceIdArg: 'id' },
+  unarchive_project: { resourceType: 'projects', resourceIdArg: 'id' },
   delete_project: { resourceType: 'projects', resourceIdArg: 'id' },
   // --- dependency-tools.ts -------------------------------------------------
   add_dependency: { resourceType: 'dependencies', resourceIdArg: null },

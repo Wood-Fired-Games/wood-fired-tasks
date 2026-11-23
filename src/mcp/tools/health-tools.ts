@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { VERSION } from '../../utils/version.js';
 import type { HealthFinding } from '../../services/wsjf-health.service.js';
+import { ProjectRepository } from '../../repositories/project.repository.js';
 
 /**
  * Task #1004: lint for the edge-less blocked dead end. A task in status
@@ -85,7 +86,13 @@ export function registerHealthTools(server: McpServer, db: Database): void {
         };
         const database = {
           path: db.name,
+          // `projects` stays the TOTAL, archived included: it is the upgrade
+          // fingerprint operators compare across a deploy.
           projects: projectRow.n,
+          // Archived project state: how many of those are archived — the same
+          // field as GET /health/detailed, read through the repository that
+          // owns the archive columns.
+          archived_projects: new ProjectRepository(db).count('only'),
           maxTaskId: maxIdRow.m ?? null,
           latestActivity: latestRow.t ?? null,
         };
@@ -107,7 +114,7 @@ export function registerHealthTools(server: McpServer, db: Database): void {
           content: [
             {
               type: 'text',
-              text: `Service Status: healthy\nVersion: ${version}\nDatabase: ok\nTimestamp: ${timestamp}\nDB Path: ${database.path}\nProjects: ${database.projects}, Max Task ID: ${database.maxTaskId ?? 'none'}, Latest Activity: ${database.latestActivity ?? 'none'}${findingsLine}`,
+              text: `Service Status: healthy\nVersion: ${version}\nDatabase: ok\nTimestamp: ${timestamp}\nDB Path: ${database.path}\nProjects: ${database.projects}, Archived Projects: ${database.archived_projects}, Max Task ID: ${database.maxTaskId ?? 'none'}, Latest Activity: ${database.latestActivity ?? 'none'}${findingsLine}`,
             },
           ],
           structuredContent: toStructuredContent({
@@ -147,6 +154,7 @@ export function registerHealthTools(server: McpServer, db: Database): void {
             database: {
               path: db.name,
               projects: 0,
+              archived_projects: 0,
               maxTaskId: null,
               latestActivity: null,
             },

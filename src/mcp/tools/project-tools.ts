@@ -1,7 +1,12 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { toStructuredContent } from '../lib/structured-content.js';
 import { ProjectService } from '../../services/project.service.js';
-import { CreateProjectSchema, ValueCharterNullableSchema } from '../../schemas/project.schema.js';
+import {
+  ArchivedFilterValueSchema,
+  CreateProjectSchema,
+  ValueCharterNullableSchema,
+} from '../../schemas/project.schema.js';
+import type { Project } from '../../types/task.js';
 import { ModelPolicyNullableSchema } from '../../schemas/model-policy.schema.js';
 import { ScmCharterNullableSchema } from '../../schemas/scm-charter.schema.js';
 import { z } from 'zod';
@@ -10,19 +15,98 @@ import { enforceToolScope } from '../scope-gate.js';
 import { omitUndefined } from '../../utils/omit-undefined.js';
 import type { McpServerContext } from '../server.js';
 
+// ---------------------------------------------------------------------------
+// Archived project state (design §3.5). Everything below is shared verbatim
+// with the remote bridge (`src/mcp/remote/register-tools.ts`) so the two
+// transports cannot drift on a schema, a description or a line of text.
+// ---------------------------------------------------------------------------
+
+export const LIST_PROJECTS_DESCRIPTION =
+  'List projects with pagination (limit default 50, max 500; offset default 0). Returns ' +
+  '`{ projects, total, limit, offset }`. Archived projects are omitted unless archived is ' +
+  '"include" (return them too) or "only" (return nothing else); total counts the filtered set.';
+
+export const ARCHIVE_PROJECT_DESCRIPTION =
+  'Archive a project: it leaves default listings and becomes read-only (its tasks stay ' +
+  'readable by id; comments are still allowed). Refused with `project_has_unfinished_tasks` ' +
+  'while any task is open, in_progress, blocked or backlogged, unless `force: true` with a ' +
+  '`reason`. Archiving an already archived project returns it unchanged. Reversible with ' +
+  'unarchive_project.';
+
+export const UNARCHIVE_PROJECT_DESCRIPTION =
+  'Unarchive a project so it accepts work again and returns to default listings. Blocked ' +
+  'tasks whose blockers all finished while it was archived are reopened. Unarchiving a ' +
+  'project that is not archived returns it unchanged.';
+
+/**
+ * `archive_project` arguments. `reason` and `force` are validated by the
+ * service's `ArchiveProjectSchema` (trim, 500-character cap, `force` needs a
+ * `reason`); the tool schema only fixes their types so the two cannot disagree.
+ */
+export const ArchiveProjectToolSchema = z.object({
+  id: z.number().int().positive(),
+  reason: z.string().optional(),
+  force: z.boolean().optional(),
+});
+
+export const UnarchiveProjectToolSchema = z.object({
+  id: z.number().int().positive(),
+});
+
+/** The `Archived: …` line of a `get_project` summary, or null when not archived. */
+export function formatArchivedLine(
+  project: Pick<Project, 'archived' | 'archived_at' | 'archived_by' | 'archive_reason'>,
+): string | null {
+  if (!project.archived) {
+    return null;
+  }
+  const by = project.archived_by ? ` by ${project.archived_by}` : '';
+  const reason = project.archive_reason ? ` (reason: ${project.archive_reason})` : '';
+  return `Archived: ${project.archived_at ?? 'unknown'}${by}${reason}`;
+}
+
+/** One `list_projects` text line; an archived project is marked. */
+export function formatProjectListLine(project: Pick<Project, 'id' | 'name' | 'archived'>): string {
+  return `- [${project.id}] ${project.name}${project.archived ? ' (archived)' : ''}`;
+}
+
+export function formatArchiveResult(project: Pick<Project, 'id' | 'name'>): string {
+  return `Project ${project.id} archived: ${project.name}`;
+}
+
+export function formatUnarchiveResult(project: Pick<Project, 'id' | 'name'>): string {
+  return `Project ${project.id} unarchived: ${project.name}`;
+}
+
+/**
+ * The name recorded as `archived_by` for a stdio MCP call: the display name
+ * of the identity resolved at boot. Falls back to `user:<id>` when the server
+ * was built without a user repository, and to `mcp` when it has no resolved
+ * identity at all (contexts that predate identity resolution).
+ */
+function resolveMcpActorName(ctx: McpServerContext): string {
+  if (ctx.actorUserId === null) {
+    return 'mcp';
+  }
+  return ctx.userRepository?.findById(ctx.actorUserId)?.display_name ?? `user:${ctx.actorUserId}`;
+}
+
 /**
  * Register all project-related MCP tools
  *
- * Registers 5 tools for project CRUD operations:
+ * Registers 7 tools for project operations:
  * - create_project: Create a new project
  * - get_project: Get project by ID
- * - list_projects: List all projects
+ * - list_projects: List projects (archived ones hidden by default)
  * - update_project: Update existing project
+ * - archive_project: Archive a project (read-only, hidden from default lists)
+ * - unarchive_project: Return an archived project to normal use
  * - delete_project: Delete project by ID
  *
  * @param ctx - Task #1631: boot-time context carrying the resolved PAT grant
- *   (`ctx.scopes`). The three mutating tools (`create_project` /
- *   `update_project` → write, `delete_project` → admin) check it via
+ *   (`ctx.scopes`). The five mutating tools (`create_project` /
+ *   `update_project` / `archive_project` / `unarchive_project` → write,
+ *   `delete_project` → admin) check it via
  *   `enforceToolScope` before touching the service; `get_project` and
  *   `list_projects` are pure reads and stay ungated. Defaults to
  *   `{ actorUserId: null }` (no scopes ⇒ full tier) so pre-#1631 callers,
@@ -80,6 +164,10 @@ export function registerProjectTools(
         if (project.description) {
           summary.push(`Description: ${project.description}`);
         }
+        const archivedLine = formatArchivedLine(project);
+        if (archivedLine) {
+          summary.push(archivedLine);
+        }
 
         return {
           content: [
@@ -100,17 +188,17 @@ export function registerProjectTools(
   server.registerTool(
     'list_projects',
     {
-      description:
-        'List projects with pagination (limit default 50, max 500; offset default 0). Returns `{ projects, total, limit, offset }`.',
+      description: LIST_PROJECTS_DESCRIPTION,
       inputSchema: z.object({
         limit: z.number().int().positive().max(500).optional(),
         offset: z.number().int().nonnegative().optional(),
+        archived: ArchivedFilterValueSchema.optional(),
       }),
     },
     async (args) => {
       try {
         const page = projectService.listProjectsPaginated(
-          omitUndefined({ limit: args.limit, offset: args.offset }),
+          omitUndefined({ limit: args.limit, offset: args.offset, archived: args.archived }),
         );
 
         if (page.data.length === 0) {
@@ -134,7 +222,7 @@ export function registerProjectTools(
           `Found ${page.data.length} of ${page.total} project(s) (limit=${page.limit}, offset=${page.offset}):\n`,
         ];
         page.data.forEach((project) => {
-          summary.push(`- [${project.id}] ${project.name}`);
+          summary.push(formatProjectListLine(project));
         });
 
         return {
@@ -190,6 +278,55 @@ export function registerProjectTools(
               text: `Project ${args.id} updated: ${project.name}`,
             },
           ],
+          structuredContent: toStructuredContent(project),
+        };
+      } catch (error) {
+        throw convertToMcpError(error);
+      }
+    },
+  );
+
+  // Tool: archive_project (Archived project state, design §2.2 / §3.5)
+  server.registerTool(
+    'archive_project',
+    {
+      description: ARCHIVE_PROJECT_DESCRIPTION,
+      inputSchema: ArchiveProjectToolSchema,
+    },
+    async (args) => {
+      try {
+        // `write`, like update_project: archiving destroys nothing and is
+        // reversible.
+        enforceToolScope(ctx.scopes, 'archive_project');
+        // archived_by is the MCP identity, never an argument.
+        const project = projectService.archiveProject(
+          args.id,
+          omitUndefined({ reason: args.reason, force: args.force }),
+          resolveMcpActorName(ctx),
+        );
+        return {
+          content: [{ type: 'text', text: formatArchiveResult(project) }],
+          structuredContent: toStructuredContent(project),
+        };
+      } catch (error) {
+        throw convertToMcpError(error);
+      }
+    },
+  );
+
+  // Tool: unarchive_project
+  server.registerTool(
+    'unarchive_project',
+    {
+      description: UNARCHIVE_PROJECT_DESCRIPTION,
+      inputSchema: UnarchiveProjectToolSchema,
+    },
+    async (args) => {
+      try {
+        enforceToolScope(ctx.scopes, 'unarchive_project');
+        const project = projectService.unarchiveProject(args.id, resolveMcpActorName(ctx));
+        return {
+          content: [{ type: 'text', text: formatUnarchiveResult(project) }],
           structuredContent: toStructuredContent(project),
         };
       } catch (error) {

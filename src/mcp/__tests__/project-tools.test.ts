@@ -671,4 +671,246 @@ describe('MCP Project Tools', () => {
       }
     });
   });
+
+  // ==========================================================================
+  // Archived project state (WFT #2474, design §3.5)
+  // ==========================================================================
+  describe('archived project state', () => {
+    async function call(name: string, args: Record<string, unknown>): Promise<ToolResult> {
+      return (await client.callTool({ name, arguments: args })) as ToolResult;
+    }
+
+    function text(result: ToolResult): string {
+      return result.content[0].text ?? '';
+    }
+
+    function listedNames(result: ToolResult): string[] {
+      const projects = (result.structuredContent?.projects ?? []) as Array<{ name: string }>;
+      return projects.map((project) => project.name);
+    }
+
+    describe('archive_project tool', () => {
+      it('archives a project with no unfinished tasks and returns it', async () => {
+        const project = app.projectService.createProject({ name: 'Finished' });
+
+        const result = await call('archive_project', { id: project.id, reason: 'shipped' });
+
+        expect(result.isError).toBeFalsy();
+        expect(text(result)).toContain(`Project ${project.id} archived`);
+        expect(result.structuredContent).toMatchObject({
+          id: project.id,
+          archived: true,
+          archive_reason: 'shipped',
+        });
+        expect(app.projectService.getProject(project.id).archived).toBe(true);
+      });
+
+      it('refuses while a task is unfinished, and archives with force and a reason', async () => {
+        const project = app.projectService.createProject({ name: 'Busy' });
+        app.taskService.createTask({ title: 'Open', project_id: project.id, created_by: 't' });
+
+        const refused = await call('archive_project', { id: project.id });
+        expect(refused.isError).toBe(true);
+        expect(text(refused)).toContain('project_has_unfinished_tasks');
+        expect(app.projectService.getProject(project.id).archived).toBe(false);
+
+        const forcedWithoutReason = await call('archive_project', { id: project.id, force: true });
+        expect(forcedWithoutReason.isError).toBe(true);
+        expect(app.projectService.getProject(project.id).archived).toBe(false);
+
+        const forced = await call('archive_project', {
+          id: project.id,
+          force: true,
+          reason: 'shelved',
+        });
+        expect(forced.isError).toBeFalsy();
+        expect(forced.structuredContent).toMatchObject({
+          archived: true,
+          archive_reason: 'shelved',
+        });
+      });
+
+      it('is a no-op on an already archived project: first archive wins', async () => {
+        const project = app.projectService.createProject({ name: 'Twice' });
+        const first = await call('archive_project', { id: project.id, reason: 'first' });
+
+        const second = await call('archive_project', { id: project.id, reason: 'second' });
+
+        expect(second.isError).toBeFalsy();
+        expect(second.structuredContent).toEqual(first.structuredContent);
+      });
+
+      it('returns a structured error for a project that does not exist', async () => {
+        const result = await call('archive_project', { id: 99999 });
+
+        expect(result.isError).toBe(true);
+        expect(text(result)).toContain('not found');
+      });
+
+      it('takes archived_by from the MCP identity, and has no argument that could set it', async () => {
+        const actor = app.db
+          .prepare(`INSERT INTO users (display_name, email) VALUES (?, ?) RETURNING id`)
+          .get('mcp-archiver', 'mcp-archiver@example.com') as { id: number };
+        const server = createMcpServer(
+          app.taskService,
+          app.projectService,
+          app.dependencyService,
+          app.commentService,
+          app.db,
+          { actorUserId: actor.id, userRepository: app.userRepository },
+        );
+        const [actorServerTransport, actorClientTransport] = InMemoryTransport.createLinkedPair();
+        await server.connect(actorServerTransport);
+        const actorClient = new Client({ name: 'actor-client', version: '1.0.0' }, {});
+        await actorClient.connect(actorClientTransport);
+        try {
+          const project = app.projectService.createProject({ name: 'Attributed' });
+
+          const result = (await actorClient.callTool({
+            name: 'archive_project',
+            arguments: { id: project.id, archived_by: 'someone-else' },
+          })) as ToolResult;
+
+          expect(result.isError).toBeFalsy();
+          expect(app.projectService.getProject(project.id).archived_by).toBe('mcp-archiver');
+        } finally {
+          await actorClientTransport.close();
+          await actorServerTransport.close();
+        }
+      });
+
+      it('records the fallback actor when the server has no resolved identity', async () => {
+        const project = app.projectService.createProject({ name: 'Anonymous' });
+
+        await call('archive_project', { id: project.id });
+
+        expect(app.projectService.getProject(project.id).archived_by).toBe('mcp');
+      });
+    });
+
+    describe('unarchive_project tool', () => {
+      it('unarchives an archived project and returns it', async () => {
+        const project = app.projectService.createProject({ name: 'Back again' });
+        app.projectService.archiveProject(project.id, { reason: 'shipped' }, 'tester');
+
+        const result = await call('unarchive_project', { id: project.id });
+
+        expect(result.isError).toBeFalsy();
+        expect(text(result)).toContain(`Project ${project.id} unarchived`);
+        expect(result.structuredContent).toMatchObject({
+          id: project.id,
+          archived: false,
+          archived_at: null,
+          archived_by: null,
+          archive_reason: null,
+        });
+      });
+
+      it('is a no-op on a project that is not archived', async () => {
+        const project = app.projectService.createProject({ name: 'Never archived' });
+        const before = app.projectService.getProject(project.id);
+
+        const result = await call('unarchive_project', { id: project.id });
+
+        expect(result.isError).toBeFalsy();
+        expect(app.projectService.getProject(project.id)).toEqual(before);
+      });
+
+      it('returns a structured error for a project that does not exist', async () => {
+        const result = await call('unarchive_project', { id: 99999 });
+
+        expect(result.isError).toBe(true);
+        expect(text(result)).toContain('not found');
+      });
+    });
+
+    describe('list_projects archived filter', () => {
+      beforeEach(() => {
+        app.projectService.createProject({ name: 'Live' });
+        const archived = app.projectService.createProject({ name: 'Archived' });
+        app.projectService.archiveProject(archived.id, { reason: 'shipped' }, 'tester');
+      });
+
+      it('omits archived projects by default, and total counts the filtered set', async () => {
+        const result = await call('list_projects', {});
+
+        expect(listedNames(result)).toEqual(['Live']);
+        expect(result.structuredContent?.total).toBe(1);
+      });
+
+      it('archived=exclude is the default spelled out', async () => {
+        const result = await call('list_projects', { archived: 'exclude' });
+
+        expect(listedNames(result)).toEqual(['Live']);
+        expect(result.structuredContent?.total).toBe(1);
+      });
+
+      it('archived=include returns both and marks the archived one in the text', async () => {
+        const result = await call('list_projects', { archived: 'include' });
+
+        expect(listedNames(result).sort()).toEqual(['Archived', 'Live']);
+        expect(result.structuredContent?.total).toBe(2);
+        expect(text(result)).toMatch(/Archived \(archived\)/);
+        expect(text(result)).not.toMatch(/Live \(archived\)/);
+      });
+
+      it('archived=only returns nothing else', async () => {
+        const result = await call('list_projects', { archived: 'only' });
+
+        expect(listedNames(result)).toEqual(['Archived']);
+        expect(result.structuredContent?.total).toBe(1);
+      });
+
+      it('rejects an unknown archived value', async () => {
+        const result = await call('list_projects', { archived: 'yes' });
+
+        expect(result.isError).toBe(true);
+      });
+    });
+
+    describe('get_project text summary', () => {
+      it('shows an archived line with date, actor and reason', async () => {
+        const project = app.projectService.createProject({ name: 'Shelved' });
+        const archived = app.projectService.archiveProject(
+          project.id,
+          { reason: 'shipped' },
+          'tester',
+        );
+
+        const result = await call('get_project', { id: project.id });
+
+        expect(text(result)).toContain(
+          `Archived: ${archived.archived_at} by tester (reason: shipped)`,
+        );
+      });
+
+      it('shows the archived line without a reason when none was given', async () => {
+        const project = app.projectService.createProject({ name: 'Shelved quietly' });
+        const archived = app.projectService.archiveProject(project.id, {}, 'tester');
+
+        const result = await call('get_project', { id: project.id });
+
+        expect(text(result)).toContain(`Archived: ${archived.archived_at} by tester`);
+        expect(text(result)).not.toContain('reason:');
+      });
+
+      it('shows no archived line for a project that is not archived', async () => {
+        const project = app.projectService.createProject({ name: 'Live' });
+
+        const result = await call('get_project', { id: project.id });
+
+        expect(text(result)).not.toContain('Archived:');
+      });
+    });
+
+    it('a write refused by the freeze is an InvalidRequest tool error with the project_archived prefix', async () => {
+      const project = app.projectService.createProject({ name: 'Frozen' });
+      app.projectService.archiveProject(project.id, {}, 'tester');
+
+      const result = await call('update_project', { id: project.id, updates: { name: 'Nope' } });
+
+      expect(result.isError).toBe(true);
+      expect(text(result)).toMatch(/project_archived: project \d+ is archived/);
+    });
+  });
 });
