@@ -84,6 +84,17 @@ and benchmarks are nightly.
 Every CI `npm ci` runs as `npx --yes npm@11.21.1 ci`, because older npm
 compiles `better-sqlite3` from source (npm/cli#9837).
 
+**The `audit` gate goes red by itself.** It runs
+`npm audit --omit=dev --audit-level=high` against the live advisory database,
+so a new advisory in a production dependency fails every open pull request
+and, through `prepublishOnly`, every publish, with no change in this
+repository. This is the state on 2026-11-23: `body-parser` 2.3.0, pulled in
+by `@modelcontextprotocol/sdk` through `express`, has high-severity advisory
+GHSA-27r3-jxmh-p828. `main` last ran CI on 2026-10-21 and was green then.
+The remedy is a lockfile update (`npm audit fix`, which moves `body-parser`
+to a patched release inside the range `express` already allows) in its own
+pull request. No release can be published until that is merged.
+
 ## 4. npm publish
 
 `.github/workflows/publish.yml`:
