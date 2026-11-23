@@ -51,6 +51,12 @@ request body.
 | Already archived | Succeed as a no-op (200, no event), so agent retries are safe. |
 | Reason | Optional free text, max 500 characters, required only with `force`. |
 
+The refusal's 422 body carries the counts as data too:
+`details: { code: 'project_has_unfinished_tasks', total, counts: { open, in_progress, blocked, backlogged } }`
+(WFT #2530). `force` without `reason` is a validation error whose message
+opens with `archive_reason_required`: 400 on REST, `InvalidParams` with the
+same text on stdio and remote MCP.
+
 ### 2.3 What an archived project accepts
 
 | Operation | Recommendation |
@@ -135,8 +141,11 @@ routes are classified in it.
   the full project. They are sent over SSE and are valid `on:` values for
   `wft-router` rules. `project.updated` is **not** also emitted.
 - Audit trail: the REST hook (`src/api/hooks/audit-trail.ts`) records every
-  non-GET request automatically, so the two new routes need no extra code. The
-  MCP producer (`src/mcp/audit-trail.ts`) needs one table entry per new tool.
+  non-GET request automatically. Its resource is derived from the route
+  pattern, which would record `archive` with no id; `archive` and `unarchive`
+  are therefore listed as instance actions, so the row is `projects` plus the
+  project id, as on MCP (WFT #2530). The MCP producer
+  (`src/mcp/audit-trail.ts`) needs one table entry per new tool.
 
 ## 3. Surfaces that must change
 

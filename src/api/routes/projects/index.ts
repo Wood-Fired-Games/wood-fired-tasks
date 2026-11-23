@@ -7,7 +7,11 @@ import {
   UpdateProjectSchema,
 } from '../../../schemas/task.schema.js';
 import { requireUser } from '../../plugins/auth/index.js';
-import { ProjectResponseSchema, ProjectListPaginatedResponseSchema } from './schemas.js';
+import {
+  ErrorResponseSchema,
+  ProjectResponseSchema,
+  ProjectListPaginatedResponseSchema,
+} from './schemas.js';
 import dependencyGraphRoutes from './dependency-graph.js';
 import topologyRoutes from './topology.js';
 import resolveModelRoutes from './resolve-model.js';
@@ -85,6 +89,15 @@ const projectRoutes: FastifyPluginAsyncZod = async (fastify) => {
         body: ArchiveProjectSchema.nullish(),
         response: {
           200: ProjectResponseSchema,
+          400: ErrorResponseSchema.describe(
+            'Invalid id or body; `force: true` without a `reason` opens its message with ' +
+              '`archive_reason_required`.',
+          ),
+          404: ErrorResponseSchema.describe('No project with this id.'),
+          422: ErrorResponseSchema.describe(
+            'The project has unfinished tasks (`project_has_unfinished_tasks`); `details` ' +
+              'carries `code`, `total` and `counts` per status.',
+          ),
         },
       },
     },
@@ -111,6 +124,8 @@ const projectRoutes: FastifyPluginAsyncZod = async (fastify) => {
         params: z.object({ id: z.coerce.number().int().positive() }),
         response: {
           200: ProjectResponseSchema,
+          400: ErrorResponseSchema.describe('Invalid id.'),
+          404: ErrorResponseSchema.describe('No project with this id.'),
         },
       },
     },

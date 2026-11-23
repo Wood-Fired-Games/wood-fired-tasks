@@ -73,7 +73,7 @@ export function convertToMcpError(error: unknown): McpError {
 
   // BusinessError: business logic violation
   if (error instanceof BusinessError) {
-    return new McpError(ErrorCode.InvalidRequest, error.message);
+    return new McpError(ErrorCode.InvalidRequest, error.message, error.details);
   }
 
   // Unknown errors: log full details, return sanitized error

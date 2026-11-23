@@ -20,7 +20,13 @@ import {
   CreateProjectSchema,
   UpdateProjectSchema,
 } from '../schemas/project.schema.js';
-import { ValidationError, BusinessError, NotFoundError, projectArchivedError } from './errors.js';
+import {
+  ValidationError,
+  BusinessError,
+  NotFoundError,
+  projectArchivedError,
+  validationErrorFromIssues,
+} from './errors.js';
 import { eventBus } from '../events/event-bus.js';
 import type { Database } from '../db/driver.js';
 import type { IProjectCharterHistoryRepository } from '../repositories/project-charter-history.repository.js';
@@ -223,15 +229,7 @@ export class ProjectService {
   archiveProject(id: number, input: unknown, actor: string): Project {
     const result = ArchiveProjectSchema.safeParse(input ?? {});
     if (!result.success) {
-      const fieldErrors: Record<string, string[]> = {};
-      result.error.issues.forEach((err) => {
-        const field = err.path.join('.');
-        if (!fieldErrors[field]) {
-          fieldErrors[field] = [];
-        }
-        fieldErrors[field].push(err.message);
-      });
-      throw new ValidationError(fieldErrors);
+      throw validationErrorFromIssues(result.error.issues);
     }
 
     const existing = this.projectRepo.findById(id);
@@ -302,6 +300,14 @@ export class ProjectService {
       `${PROJECT_HAS_UNFINISHED_TASKS_CODE}: project ${projectId} has ${total} unfinished ` +
         `task${total === 1 ? '' : 's'} (${perStatus.join(', ')}); finish or close them, ` +
         'or archive with force: true and a reason',
+      // WFT #2530: the same counts, machine-readable.
+      {
+        code: PROJECT_HAS_UNFINISHED_TASKS_CODE,
+        total,
+        counts: Object.fromEntries(
+          NON_TERMINAL_TASK_STATUSES.map((status) => [status, counts[status]]),
+        ),
+      },
     );
   }
 

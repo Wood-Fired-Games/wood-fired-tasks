@@ -20,13 +20,34 @@ export class ValidationError extends Error {
 }
 
 /**
+ * Build a ValidationError from Zod issues, one entry per field path (the
+ * root is the empty string), messages in issue order.
+ */
+export function validationErrorFromIssues(
+  issues: ReadonlyArray<{ path: ReadonlyArray<PropertyKey>; message: string }>,
+): ValidationError {
+  const fieldErrors: Record<string, string[]> = {};
+  for (const issue of issues) {
+    const field = issue.path.map(String).join('.');
+    (fieldErrors[field] ??= []).push(issue.message);
+  }
+  return new ValidationError(fieldErrors);
+}
+
+/**
  * BusinessError - thrown when business logic rules are violated
  */
 export class BusinessError extends Error {
   public override readonly name = 'BusinessError';
+  /**
+   * Optional machine-readable detail sent as `details` on the REST 422 and as
+   * `data` on the MCP error (WFT #2530), e.g. per-status task counts.
+   */
+  public readonly details: Record<string, unknown> | undefined;
 
-  constructor(message: string) {
+  constructor(message: string, details?: Record<string, unknown>) {
     super(message);
+    this.details = details;
 
     // Restore prototype chain for instanceof checks
     Object.setPrototypeOf(this, BusinessError.prototype);
