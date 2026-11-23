@@ -7,7 +7,11 @@
  * tmpdirs. Also verifies precedence (bugs_mirror beats wft_marker) and that
  * malformed inputs never throw.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+// Only the default-lister test reaches the real client; every other test
+// injects its own lister.
+vi.mock('../api/client.js', () => ({ listProjects: vi.fn() }));
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -138,6 +142,30 @@ describe('resolveProjectFromCwd', () => {
       projectId: 11,
       repoName: 'wood-fired-tasks',
     });
+  });
+
+  // WFT #2479: the repo-name auto-match never links an archived project.
+  it('skips an archived project whose name matches the repo', async () => {
+    const repoDir = join(root, 'shelved-repo');
+    mkdirSync(repoDir, { recursive: true });
+    const lister = async () => [{ ...project(12, 'shelved-repo'), archived: true }];
+
+    const res = await resolveProjectFromCwd(repoDir, { listProjects: lister });
+
+    expect(res).toEqual<ProjectResolution>({ resolved: false });
+  });
+
+  it('the default lister asks for the default listing, which omits archived projects', async () => {
+    const repoDir = join(root, 'default-lister-repo');
+    mkdirSync(repoDir, { recursive: true });
+    const { listProjects } = await import('../api/client.js');
+    vi.mocked(listProjects).mockResolvedValue([]);
+
+    await resolveProjectFromCwd(repoDir);
+
+    // No `archived` parameter: the server's default (exclude) applies.
+    expect(listProjects).toHaveBeenCalledOnce();
+    expect(vi.mocked(listProjects).mock.calls[0]).toEqual([]);
   });
 
   // ── Source 4: unlinked ───────────────────────────────────────────

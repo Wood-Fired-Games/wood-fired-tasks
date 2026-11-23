@@ -38,6 +38,8 @@ export interface ProjectCounts {
   open: number;
   /** Number of finished tasks (`done` + `closed`, already summed). */
   doneClosed: number;
+  /** The linked project is archived: render an `[archived]` marker (WFT #2479). */
+  archived?: boolean | undefined;
 }
 
 /** Inputs to {@link formatStatuslineSegment}. All are plain data — no I/O. */
@@ -145,8 +147,9 @@ export function formatStatuslineSegment(opts: FormatStatuslineSegmentOptions = {
   // ── Build the counts segment (omitted when unlinked). ────────────────────
   let countsSegment = '';
   if (opts.counts) {
-    const { projectName, open, doneClosed } = opts.counts;
-    countsSegment = `${bold(projectName)} ${open} open · ${doneClosed} done`;
+    const { projectName, open, doneClosed, archived } = opts.counts;
+    const marker = archived === true ? ' [archived]' : '';
+    countsSegment = `${bold(projectName)}${marker} ${open} open · ${doneClosed} done`;
   }
 
   // ── Build the hint segment (omitted when up-to-date/disabled). ───────────

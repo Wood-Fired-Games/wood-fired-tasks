@@ -54,6 +54,11 @@ export interface CountCache {
   projectName: string;
   open: number;
   doneClosed: number;
+  /**
+   * The project is archived (WFT #2479). Optional: entries written before the
+   * flag existed read as not archived.
+   */
+  archived?: boolean;
   /** ms since epoch — stamped by {@link writeAtomic}. */
   fetchedAt: number;
 }

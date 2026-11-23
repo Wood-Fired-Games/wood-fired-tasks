@@ -119,6 +119,15 @@ describe('formatStatuslineSegment', () => {
     expect(out).not.toContain('/tasks:update');
   });
 
+  it('marks an archived linked project (WFT #2479)', () => {
+    process.env.NO_COLOR = '1';
+    const out = formatStatuslineSegment({ counts: { ...COUNTS, archived: true } });
+    expect(out).toBe('myproj [archived] 3 open · 7 done');
+    expect(formatStatuslineSegment({ counts: { ...COUNTS, archived: false } })).toBe(
+      'myproj 3 open · 7 done',
+    );
+  });
+
   it('omits the hint when updateAvailable is undefined (counts-only)', () => {
     process.env.NO_COLOR = '1';
     const out = formatStatuslineSegment({ counts: COUNTS });
