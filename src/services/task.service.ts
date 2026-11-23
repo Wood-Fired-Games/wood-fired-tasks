@@ -243,6 +243,20 @@ export class TaskService {
   }
 
   /**
+   * Archived project state: the write guard for a caller that is about to
+   * answer for a task WITHOUT going through a guarded write — the claim
+   * route replaying a cached idempotent success (WFT #2523). Throws the
+   * `project_archived` refusal when the task's current project is archived.
+   * A task that no longer exists is not this guard's concern.
+   */
+  assertTaskProjectWritable(taskId: number): void {
+    const task = this.taskRepo.findById(taskId);
+    if (task) {
+      assertProjectWritable(this.projectRepo, task.project_id);
+    }
+  }
+
+  /**
    * WSJF (#628): is the in-transaction audit hook wired? True only when BOTH a
    * db handle and a history repository were injected. When false the score
    * still persists (back-compat for 2-arg constructions) but no history row is

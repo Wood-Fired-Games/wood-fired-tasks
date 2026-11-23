@@ -356,6 +356,9 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
           200: ClaimResponseSchema,
           400: ErrorResponseSchema,
           409: ConflictResponseSchema,
+          422: ErrorResponseSchema.describe(
+            'The task is in an archived project (`project_archived`); unarchive it first.',
+          ),
         },
       },
     },
@@ -383,6 +386,12 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
         idempotencyKey = parsed.data;
         const cached = fastify.idempotencyService.get(idempotencyKey);
         if (cached) {
+          // Archived project state (WFT #2523): a cached success is not
+          // replayed for a project archived since. The freeze answers 422
+          // here exactly as it does for a first claim; nothing is written
+          // and the cache entry is kept, so the replay works again after an
+          // unarchive.
+          fastify.taskService.assertTaskProjectWritable(request.params.id);
           return reply.code(200).send(cached as z.infer<typeof ClaimResponseSchema>);
         }
       }

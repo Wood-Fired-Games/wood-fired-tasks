@@ -11600,6 +11600,31 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
             },
             "description": "Default Response",
           },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "description": "The task is in an archived project (\`project_archived\`); unarchive it first.",
+                  "properties": {
+                    "details": {},
+                    "error": {
+                      "type": "string",
+                    },
+                    "message": {
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "error",
+                    "message",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "The task is in an archived project (\`project_archived\`); unarchive it first.",
+          },
         },
         "tags": [
           "tasks",

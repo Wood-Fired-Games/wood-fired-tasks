@@ -137,6 +137,36 @@ describe('WorkflowEngine: cascade that reaches into an archived project', () => 
     expect(app.taskService.getTask(archivedParent.id)).toEqual(before);
     expect(errorSpy).not.toHaveBeenCalled();
   });
+
+  it('a cascade target skipped as archived emits neither task.status_changed nor task.updated (WFT #2523)', () => {
+    // One blocker reaches two frozen targets: a dependent to unblock and a
+    // parent to auto-complete, both in the archived project.
+    const archivedParent = createTask('Parent in the other project', archivedProjectId);
+    const blocker = createTask('Blocker', liveProjectId);
+    app.taskService.updateTask(blocker.id, { parent_task_id: archivedParent.id });
+    const archivedDependent = createTask('Archived dependent', archivedProjectId);
+    block(blocker.id, archivedDependent.id);
+    forceArchive(archivedProjectId);
+
+    const seen: string[] = [];
+    const unsubs = (['task.status_changed', 'task.updated'] as const).map((type) =>
+      eventBus.subscribe(type, (e: TaskEvent) => {
+        seen.push(`${type}:${e.data.id}`);
+      }),
+    );
+    app.taskService.updateTask(blocker.id, { status: 'in_progress' });
+    app.taskService.updateTask(blocker.id, { status: 'done' });
+    for (const unsub of unsubs) unsub();
+
+    // The blocker's own events are there, so both subscriptions are live.
+    expect(seen).toContain(`task.status_changed:${blocker.id}`);
+    expect(seen).toContain(`task.updated:${blocker.id}`);
+    for (const skipped of [archivedDependent.id, archivedParent.id]) {
+      expect(seen).not.toContain(`task.status_changed:${skipped}`);
+      expect(seen).not.toContain(`task.updated:${skipped}`);
+    }
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
 });
 
 /**
