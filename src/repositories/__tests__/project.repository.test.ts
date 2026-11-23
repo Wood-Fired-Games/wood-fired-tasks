@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type Database from '../../db/driver.js';
 import { initDatabase } from '../../db/database.js';
 import { runMigrations } from '../../db/migrate.js';
@@ -225,5 +225,214 @@ describe('ProjectRepository', () => {
     const updated = repo.update(project.id, { description: 'changed' });
     expect(updated.description).toBe('changed');
     expect(updated.model_policy).toEqual(samplePolicy);
+  });
+
+  // --- Archived project state (docs/design/project-archived-state.md §3.3) ---
+
+  describe('archived state', () => {
+    const ARCHIVED_AT = '2026-11-23T12:00:00.000Z';
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date(ARCHIVED_AT));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('a new project reads as not archived, with null archive columns', () => {
+      const project = repo.create({ name: 'Fresh' });
+
+      expect(project.archived).toBe(false);
+      expect(project.archived_at).toBeNull();
+      expect(project.archived_by).toBeNull();
+      expect(project.archive_reason).toBeNull();
+    });
+
+    it('archive sets archived_at, archived_by and archive_reason and derives archived', () => {
+      const project = repo.create({ name: 'Shipped' });
+
+      const archived = repo.archive(project.id, 'alice', 'shipped in v2.9.0');
+
+      expect(archived).toMatchObject({
+        id: project.id,
+        name: 'Shipped',
+        archived: true,
+        archived_at: ARCHIVED_AT,
+        archived_by: 'alice',
+        archive_reason: 'shipped in v2.9.0',
+      });
+      // Persisted, not just returned.
+      expect(
+        db
+          .prepare('SELECT archived_at, archived_by, archive_reason FROM projects WHERE id = ?')
+          .get(project.id),
+      ).toEqual({
+        archived_at: ARCHIVED_AT,
+        archived_by: 'alice',
+        archive_reason: 'shipped in v2.9.0',
+      });
+    });
+
+    it('archive stores a null reason when none is given', () => {
+      const project = repo.create({ name: 'No Reason' });
+
+      expect(repo.archive(project.id, 'alice').archive_reason).toBeNull();
+      const other = repo.create({ name: 'Null Reason' });
+      expect(repo.archive(other.id, 'alice', null).archive_reason).toBeNull();
+    });
+
+    it('archive leaves the other columns untouched', () => {
+      const project = repo.create({
+        name: 'Keeps Fields',
+        description: 'd',
+        value_charter: sampleCharter,
+        model_policy: samplePolicy,
+      });
+
+      const archived = repo.archive(project.id, 'alice', 'done');
+
+      expect(archived).toEqual({
+        ...project,
+        archived: true,
+        archived_at: ARCHIVED_AT,
+        archived_by: 'alice',
+        archive_reason: 'done',
+        updated_at: archived.updated_at,
+      });
+    });
+
+    it('archive on an already archived project keeps the first archive', () => {
+      const project = repo.create({ name: 'Twice' });
+      repo.archive(project.id, 'alice', 'first');
+
+      vi.setSystemTime(new Date('2026-12-01T00:00:00.000Z'));
+      const again = repo.archive(project.id, 'bob', 'second');
+
+      expect(again).toMatchObject({
+        archived: true,
+        archived_at: ARCHIVED_AT,
+        archived_by: 'alice',
+        archive_reason: 'first',
+      });
+    });
+
+    it('archive throws for a project that does not exist', () => {
+      expect(() => repo.archive(999, 'alice', null)).toThrow('Project with id 999 not found');
+    });
+
+    it('unarchive clears all three columns', () => {
+      const project = repo.create({ name: 'Back Again' });
+      repo.archive(project.id, 'alice', 'shipped');
+
+      const restored = repo.unarchive(project.id);
+
+      expect(restored).toMatchObject({
+        id: project.id,
+        archived: false,
+        archived_at: null,
+        archived_by: null,
+        archive_reason: null,
+      });
+      expect(
+        db
+          .prepare('SELECT archived_at, archived_by, archive_reason FROM projects WHERE id = ?')
+          .get(project.id),
+      ).toEqual({ archived_at: null, archived_by: null, archive_reason: null });
+    });
+
+    it('unarchive on a project that is not archived is a no-op', () => {
+      const project = repo.create({ name: 'Never Archived' });
+
+      expect(repo.unarchive(project.id)).toEqual(project);
+    });
+
+    it('unarchive throws for a project that does not exist', () => {
+      expect(() => repo.unarchive(999)).toThrow('Project with id 999 not found');
+    });
+
+    it('an archived project keeps its unique name', () => {
+      const project = repo.create({ name: 'Taken' });
+      repo.archive(project.id, 'alice', null);
+
+      expect(() => repo.create({ name: 'Taken' })).toThrow();
+    });
+
+    it('findById and findByName return an archived project with the mapped columns', () => {
+      const project = repo.create({ name: 'By Id' });
+      repo.archive(project.id, 'alice', 'shipped');
+
+      for (const found of [repo.findById(project.id), repo.findByName('By Id')]) {
+        expect(found).toMatchObject({
+          archived: true,
+          archived_at: ARCHIVED_AT,
+          archived_by: 'alice',
+          archive_reason: 'shipped',
+        });
+      }
+    });
+
+    it('update on an archived project keeps it archived', () => {
+      const project = repo.create({ name: 'Renamed Later' });
+      repo.archive(project.id, 'alice', 'shipped');
+
+      const updated = repo.update(project.id, { description: 'note' });
+
+      expect(updated).toMatchObject({ archived: true, archived_by: 'alice' });
+    });
+
+    describe('list filter', () => {
+      let activeA: number;
+      let activeB: number;
+      let archivedC: number;
+
+      beforeEach(() => {
+        activeA = repo.create({ name: 'A active' }).id;
+        activeB = repo.create({ name: 'B active' }).id;
+        archivedC = repo.create({ name: 'C archived' }).id;
+        repo.archive(archivedC, 'alice', 'shipped');
+      });
+
+      it('findAll and count omit archived projects by default (archived=exclude)', () => {
+        expect(repo.findAll().map((p) => p.id)).toEqual([activeA, activeB]);
+        expect(repo.count()).toBe(2);
+        expect(repo.findAll(undefined, 'exclude').map((p) => p.id)).toEqual([activeA, activeB]);
+        expect(repo.count('exclude')).toBe(2);
+      });
+
+      it('findAll and count return every project with archived=include', () => {
+        const all = repo.findAll(undefined, 'include');
+
+        expect(all.map((p) => p.id)).toEqual([activeA, activeB, archivedC]);
+        expect(all.map((p) => p.archived)).toEqual([false, false, true]);
+        expect(repo.count('include')).toBe(3);
+      });
+
+      it('findAll and count return nothing but archived projects with archived=only', () => {
+        const only = repo.findAll(undefined, 'only');
+
+        expect(only.map((p) => p.id)).toEqual([archivedC]);
+        expect(only[0]).toMatchObject({ archived: true, archived_by: 'alice' });
+        expect(repo.count('only')).toBe(1);
+      });
+
+      it('pagination applies to the filtered set', () => {
+        expect(repo.findAll({ limit: 1, offset: 1 }).map((p) => p.id)).toEqual([activeB]);
+        expect(repo.findAll({ limit: 1, offset: 2 })).toEqual([]);
+        expect(repo.findAll({ limit: 1, offset: 2 }, 'include').map((p) => p.id)).toEqual([
+          archivedC,
+        ]);
+        expect(repo.findAll({ limit: 10, offset: 1 }, 'only')).toEqual([]);
+      });
+
+      it('an unarchived project returns to the default listing', () => {
+        repo.unarchive(archivedC);
+
+        expect(repo.findAll().map((p) => p.id)).toEqual([activeA, activeB, archivedC]);
+        expect(repo.count()).toBe(3);
+        expect(repo.count('only')).toBe(0);
+      });
+    });
   });
 });

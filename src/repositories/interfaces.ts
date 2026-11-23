@@ -1,4 +1,5 @@
 import type {
+  ArchivedFilter,
   Project,
   CreateProjectDTO,
   Task,
@@ -26,12 +27,33 @@ export interface PaginationOptions {
 export interface IProjectRepository {
   create(dto: CreateProjectDTO): Project;
   findById(id: number): Project | null;
-  findAll(pagination?: PaginationOptions): Project[];
+  /**
+   * One page of projects ordered by name. `archived` selects which projects
+   * are listed and defaults to `exclude` (archived projects omitted).
+   */
+  findAll(pagination?: PaginationOptions, archived?: ArchivedFilter): Project[];
   findByName(name: string): Project | null;
   update(id: number, updates: Partial<CreateProjectDTO>): Project;
   delete(id: number): void;
-  /** Total project count, ignoring pagination. Used to build list envelopes. */
-  count(): number;
+  /**
+   * Project count for the same `archived` filter as `findAll` (default
+   * `exclude`), ignoring pagination. Used to build list envelopes.
+   */
+  count(archived?: ArchivedFilter): number;
+  /**
+   * Archive a project: stamps `archived_at` (now), `archived_by` and
+   * `archive_reason`. `archivedBy` is the authenticated caller. Archiving an
+   * already archived project changes nothing — the first archive is kept.
+   * Preconditions (non-terminal tasks, `force`) are the service's concern.
+   * Throws if the project does not exist.
+   */
+  archive(id: number, archivedBy: string, reason?: string | null): Project;
+  /**
+   * Unarchive a project: clears `archived_at`, `archived_by` and
+   * `archive_reason`. A no-op on a project that is not archived. Throws if
+   * the project does not exist.
+   */
+  unarchive(id: number): Project;
 }
 
 export interface CompletionRangeFilters {

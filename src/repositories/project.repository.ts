@@ -2,6 +2,7 @@ import type Database from '../db/driver.js';
 import { ModelPolicySchema } from '../schemas/model-policy.schema.js';
 import { ScmCharterSchema } from '../schemas/scm-charter.schema.js';
 import type {
+  ArchivedFilter,
   Project,
   CreateProjectDTO,
   ValueCharter,
@@ -67,6 +68,35 @@ function inflateValueCharter<
 }
 
 /**
+ * A `projects` row as SQLite returns it: the three JSON columns are still
+ * TEXT, and `archived` does not exist (it is derived from `archived_at`).
+ */
+type ProjectRow = Omit<Project, 'value_charter' | 'model_policy' | 'scm' | 'archived'> & {
+  value_charter: string | null;
+  model_policy: string | null;
+  scm: string | null;
+};
+
+/**
+ * The single row → `Project` mapping every read goes through: parses the JSON
+ * columns and derives `archived` — a project is archived exactly when
+ * `archived_at` is not null (migration 021).
+ */
+function toProject(row: ProjectRow): Project {
+  return { ...inflateValueCharter(row), archived: row.archived_at !== null };
+}
+
+/**
+ * WHERE clause for each value of the `archived` listing filter. Fixed strings
+ * keyed by a closed union — never interpolated from caller input.
+ */
+const ARCHIVED_WHERE: Record<ArchivedFilter, string> = {
+  exclude: 'WHERE archived_at IS NULL',
+  include: '',
+  only: 'WHERE archived_at IS NOT NULL',
+};
+
+/**
  * Same defensive clamp used in TaskRepository — see notes there.
  */
 function resolvePagination(pagination?: PaginationOptions): {
@@ -90,9 +120,11 @@ export class ProjectRepository implements IProjectRepository {
   private insertStmt: Database.Statement;
   private findByIdStmt: Database.Statement;
   private findByNameStmt: Database.Statement;
-  private findAllStmt: Database.Statement;
+  private findAllStmts: Record<ArchivedFilter, Database.Statement>;
   private deleteStmt: Database.Statement;
-  private countStmt: Database.Statement;
+  private countStmts: Record<ArchivedFilter, Database.Statement>;
+  private archiveStmt: Database.Statement;
+  private unarchiveStmt: Database.Statement;
 
   constructor(private db: Database.Database) {
     // Prepare all statements for reuse
@@ -101,9 +133,33 @@ export class ProjectRepository implements IProjectRepository {
     );
     this.findByIdStmt = db.prepare('SELECT * FROM projects WHERE id = ?');
     this.findByNameStmt = db.prepare('SELECT * FROM projects WHERE name = ?');
-    this.findAllStmt = db.prepare('SELECT * FROM projects ORDER BY name LIMIT ? OFFSET ?');
+    const perFilter = (
+      sql: (where: string) => string,
+    ): Record<ArchivedFilter, Database.Statement> => ({
+      exclude: db.prepare(sql(ARCHIVED_WHERE.exclude)),
+      include: db.prepare(sql(ARCHIVED_WHERE.include)),
+      only: db.prepare(sql(ARCHIVED_WHERE.only)),
+    });
+    this.findAllStmts = perFilter(
+      (where) => `SELECT * FROM projects ${where} ORDER BY name LIMIT ? OFFSET ?`,
+    );
     this.deleteStmt = db.prepare('DELETE FROM projects WHERE id = ?');
-    this.countStmt = db.prepare('SELECT COUNT(*) as count FROM projects');
+    this.countStmts = perFilter((where) => `SELECT COUNT(*) as count FROM projects ${where}`);
+    // `AND archived_at IS NULL`: the first archive wins. Re-archiving keeps the
+    // original timestamp, actor and reason, so a retried or racing archive
+    // cannot rewrite who archived the project or when.
+    this.archiveStmt = db.prepare(
+      `UPDATE projects
+       SET archived_at = @archived_at, archived_by = @archived_by,
+           archive_reason = @archive_reason, updated_at = datetime('now')
+       WHERE id = @id AND archived_at IS NULL`,
+    );
+    this.unarchiveStmt = db.prepare(
+      `UPDATE projects
+       SET archived_at = NULL, archived_by = NULL, archive_reason = NULL,
+           updated_at = datetime('now')
+       WHERE id = @id AND archived_at IS NOT NULL`,
+    );
   }
 
   create(dto: CreateProjectDTO): Project {
@@ -122,44 +178,48 @@ export class ProjectRepository implements IProjectRepository {
   }
 
   findById(id: number): Project | null {
-    const row = mapRow<
-      Omit<Project, 'value_charter' | 'model_policy' | 'scm'> & {
-        value_charter: string | null;
-        model_policy: string | null;
-        scm: string | null;
-      }
-    >(this.findByIdStmt, id);
-    return row ? inflateValueCharter(row) : null;
+    const row = mapRow<ProjectRow>(this.findByIdStmt, id);
+    return row ? toProject(row) : null;
   }
 
-  findAll(pagination?: PaginationOptions): Project[] {
+  findAll(pagination?: PaginationOptions, archived: ArchivedFilter = 'exclude'): Project[] {
     const { limit, offset } = resolvePagination(pagination);
-    const rows = mapRows<
-      Omit<Project, 'value_charter' | 'model_policy' | 'scm'> & {
-        value_charter: string | null;
-        model_policy: string | null;
-        scm: string | null;
-      }
-    >(this.findAllStmt, limit, offset);
-    return rows.map(inflateValueCharter);
+    return mapRows<ProjectRow>(this.findAllStmts[archived], limit, offset).map(toProject);
   }
 
-  /** Total project count, ignoring pagination. */
-  count(): number {
-    const result = mapRow<{ count: number }>(this.countStmt);
+  /** Project count for the same `archived` filter as `findAll`, ignoring pagination. */
+  count(archived: ArchivedFilter = 'exclude'): number {
+    const result = mapRow<{ count: number }>(this.countStmts[archived]);
     // COUNT(*) always returns exactly one row — `result` is never undefined.
     return result?.count ?? 0;
   }
 
   findByName(name: string): Project | null {
-    const row = mapRow<
-      Omit<Project, 'value_charter' | 'model_policy' | 'scm'> & {
-        value_charter: string | null;
-        model_policy: string | null;
-        scm: string | null;
-      }
-    >(this.findByNameStmt, name);
-    return row ? inflateValueCharter(row) : null;
+    const row = mapRow<ProjectRow>(this.findByNameStmt, name);
+    return row ? toProject(row) : null;
+  }
+
+  archive(id: number, archivedBy: string, reason?: string | null): Project {
+    this.archiveStmt.run({
+      id,
+      archived_at: new Date().toISOString(),
+      archived_by: archivedBy,
+      archive_reason: reason ?? null,
+    });
+    return this.requireById(id);
+  }
+
+  unarchive(id: number): Project {
+    this.unarchiveStmt.run({ id });
+    return this.requireById(id);
+  }
+
+  private requireById(id: number): Project {
+    const project = this.findById(id);
+    if (!project) {
+      throw new Error(`Project with id ${id} not found`);
+    }
+    return project;
   }
 
   update(id: number, updates: Partial<CreateProjectDTO>): Project {
