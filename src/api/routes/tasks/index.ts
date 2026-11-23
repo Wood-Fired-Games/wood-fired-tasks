@@ -24,7 +24,7 @@ import {
   CompletionReportResponseSchema,
 } from './schemas.js';
 import { TASK_STATUSES } from '../../../types/task.js';
-import { BusinessError } from '../../../services/errors.js';
+import { BusinessError, isProjectArchivedError } from '../../../services/errors.js';
 import { requireUser } from '../../plugins/auth/index.js';
 import taskWsjfRoutes from './wsjf.js';
 
@@ -407,6 +407,12 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
 
         return reply.code(200).send(task);
       } catch (error) {
+        // Archived project state: the freeze is not a claim conflict. Let the
+        // error handler answer 422 BUSINESS_RULE_VIOLATION, as it does for
+        // every other guarded write.
+        if (isProjectArchivedError(error)) {
+          throw error;
+        }
         if (error instanceof BusinessError) {
           return reply.code(409).send({
             error: 'CONFLICT' as const,
