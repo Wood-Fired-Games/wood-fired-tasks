@@ -356,7 +356,8 @@ describe('WorkflowEngine: unarchive re-evaluates the project', () => {
     expect(after.status).toBe('open');
 
     const seen = taskEventsDuring(() => {
-      // No event on a repeated unarchive, so nothing re-runs...
+      // A repeated unarchive emits no event; it re-runs the pass (WFT #2532),
+      // which finds nothing left to do...
       app.projectService.unarchiveProject(archivedProjectId, 'tester');
       // ...and a redelivered event finds nothing left to do.
       eventBus.emit('project.unarchived', {
@@ -390,5 +391,149 @@ describe('WorkflowEngine: unarchive re-evaluates the project', () => {
 
     expect(app.taskService.getTask(dependent.id)).toEqual(before);
     expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  describe('isolation and retry (WFT #2532)', () => {
+    /** Makes every `updateTask` on `taskId` throw until the spy is restored. */
+    function failUpdatesOf(taskId: number): ReturnType<typeof vi.spyOn> {
+      const original = app.taskService.updateTask.bind(app.taskService);
+      return vi
+        .spyOn(app.taskService, 'updateTask')
+        .mockImplementation((id: number, ...rest: unknown[]) => {
+          if (id === taskId) {
+            throw new Error(`simulated write failure on task ${id}`);
+          }
+          return (original as (...args: unknown[]) => Task)(id, ...rest);
+        });
+    }
+
+    function loggedLines(): string[] {
+      return errorSpy.mock.calls.map((call) => String(call[0]));
+    }
+
+    it('one task whose update throws does not stop the others; the failure is logged with its task id', () => {
+      const blocker = createTask('Blocker', liveProjectId);
+      const failing = createTask('Failing dependent', archivedProjectId);
+      const healthy = createTask('Healthy dependent', archivedProjectId);
+      const parent = createTask('Parent', archivedProjectId);
+      const child = app.taskService.createTask({
+        title: 'Only child',
+        project_id: archivedProjectId,
+        created_by: 'test-user',
+        parent_task_id: parent.id,
+      });
+      // `failing` is created first, so it is re-evaluated before `healthy`.
+      block(blocker.id, failing.id);
+      block(blocker.id, healthy.id);
+      finish(child.id);
+      // The only child finishing completed the parent; reopen it so the
+      // re-evaluation has a parent to complete as well.
+      app.taskService.updateTask(parent.id, { status: 'open' });
+      forceArchive();
+      finish(blocker.id);
+      expect(status(failing.id)).toBe('blocked');
+      expect(status(healthy.id)).toBe('blocked');
+      expect(status(parent.id)).toBe('open');
+
+      const spy = failUpdatesOf(failing.id);
+      const seen = taskEventsDuring(() => {
+        app.projectService.unarchiveProject(archivedProjectId, 'tester');
+      });
+      spy.mockRestore();
+
+      expect(status(failing.id)).toBe('blocked');
+      expect(status(healthy.id)).toBe('open');
+      expect(status(parent.id)).toBe('done');
+      // No phantom event for the task whose transaction rolled back.
+      expect(seen.some((s) => s.event.data.id === failing.id)).toBe(false);
+      const lines = loggedLines().filter((line) => line.includes('re-evaluation of task'));
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toContain(`task ${failing.id}`);
+      expect(lines[0]).toContain(`project ${archivedProjectId}`);
+      expect(app.projectService.getProject(archivedProjectId).archived).toBe(false);
+    });
+
+    it('a repeated unarchive re-runs the pass, so a task that failed is opened on the retry; no project event is emitted', () => {
+      const blocker = createTask('Blocker', liveProjectId);
+      const failing = createTask('Failing dependent', archivedProjectId);
+      block(blocker.id, failing.id);
+      forceArchive();
+      finish(blocker.id);
+
+      const spy = failUpdatesOf(failing.id);
+      app.projectService.unarchiveProject(archivedProjectId, 'tester');
+      spy.mockRestore();
+      expect(status(failing.id)).toBe('blocked');
+
+      const projectEvents: string[] = [];
+      const unsub = eventBus.subscribe('project.unarchived', () => {
+        projectEvents.push('project.unarchived');
+      });
+      let returned;
+      const seen = taskEventsDuring(() => {
+        returned = app.projectService.unarchiveProject(archivedProjectId, 'tester');
+      });
+      unsub();
+
+      expect(status(failing.id)).toBe('open');
+      expect(projectEvents).toEqual([]);
+      expect(returned).toMatchObject({ id: archivedProjectId, archived: false });
+      const statusChanges = seen.filter((s) => s.type === 'task.status_changed');
+      expect(statusChanges).toHaveLength(1);
+      expect(statusChanges[0].event.metadata).toMatchObject({
+        source: 'workflow',
+        from: 'blocked',
+        to: 'open',
+      });
+    });
+
+    it('reevaluateProject reports the task ids that failed, and none on a clean pass', () => {
+      const blocker = createTask('Blocker', liveProjectId);
+      const failing = createTask('Failing dependent', archivedProjectId);
+      block(blocker.id, failing.id);
+      forceArchive();
+      finish(blocker.id);
+      const spy = failUpdatesOf(failing.id);
+      app.projectService.unarchiveProject(archivedProjectId, 'tester');
+
+      expect(app.workflowEngine.reevaluateProject(archivedProjectId)).toEqual({
+        failedTaskIds: [failing.id],
+      });
+      spy.mockRestore();
+      expect(app.workflowEngine.reevaluateProject(archivedProjectId)).toEqual({
+        failedTaskIds: [],
+      });
+      expect(status(failing.id)).toBe('open');
+    });
+
+    it('re-evaluating a project that is archived right now changes nothing', () => {
+      const blocker = createTask('Blocker', liveProjectId);
+      const dependent = createTask('Dependent', archivedProjectId);
+      block(blocker.id, dependent.id);
+      forceArchive();
+      finish(blocker.id);
+
+      expect(app.workflowEngine.reevaluateProject(archivedProjectId)).toEqual({
+        failedTaskIds: [],
+      });
+      expect(status(dependent.id)).toBe('blocked');
+    });
+
+    it('a task blocked by hand on top of blockers that are all done is opened too (the two cases cannot be told apart)', () => {
+      const blocker = createTask('Blocker', liveProjectId);
+      const handBlocked = createTask('Blocked by hand', archivedProjectId);
+      const noEdge = createTask('Blocked by hand, no dependency', archivedProjectId);
+      app.dependencyService.addDependency({ task_id: blocker.id, blocks_task_id: handBlocked.id });
+      finish(blocker.id);
+      // Every blocker was already done when a person set these to blocked.
+      app.taskService.updateTask(handBlocked.id, { status: 'blocked' });
+      app.taskService.updateTask(noEdge.id, { status: 'blocked' });
+      forceArchive();
+
+      app.projectService.unarchiveProject(archivedProjectId, 'tester');
+
+      expect(status(handBlocked.id)).toBe('open');
+      expect(status(noEdge.id)).toBe('blocked');
+    });
   });
 });

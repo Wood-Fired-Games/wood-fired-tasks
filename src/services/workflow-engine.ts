@@ -5,6 +5,12 @@ import { EventBus } from '../events/event-bus.js';
 import { VALID_STATUS_TRANSITIONS } from '../types/task.js';
 import type { ProjectEvent, TaskEvent } from '../events/types.js';
 
+/** Outcome of one unarchive re-evaluation pass (WFT #2532). */
+export interface ReevaluationResult {
+  /** Candidates whose own cascade rolled back; empty on a clean pass. */
+  failedTaskIds: number[];
+}
+
 /**
  * WorkflowEngine - automates parent task completion and dependency auto-unblock.
  *
@@ -29,12 +35,15 @@ import type { ProjectEvent, TaskEvent } from '../events/types.js';
  *   come back from the archive with a task still `blocked` although every
  *   blocker finished meanwhile, or a parent still open although every child is
  *   done. The engine therefore also subscribes to `project.unarchived` and,
- *   AFTER the unarchive has committed, re-evaluates that one project in its
- *   own cascade transaction: each blocked task whose blockers are all done is
- *   opened, and each parent whose children are all done is auto-completed,
- *   with the normal `source: 'workflow'` events. It is idempotent — a second
- *   run finds no candidate — and does nothing if the project is archived
- *   again by the time the event is handled.
+ *   AFTER the unarchive has committed, re-evaluates that one project: each
+ *   blocked task whose blockers are all done is opened, and each parent whose
+ *   children are all done is auto-completed, with the normal
+ *   `source: 'workflow'` events. Each candidate runs in its own cascade
+ *   transaction, so one failing task does not undo the others (WFT #2532).
+ *   It is idempotent — a second run finds no candidate — and does nothing if
+ *   the project is archived again by the time the event is handled. A
+ *   repeated (no-op) unarchive re-runs it through ProjectService, which is
+ *   the retry path for a task that failed.
  * - Cascade depth counts actual auto-completions and auto-unblocks, not intermediate transitions.
  *
  * Transaction atomicity (SC-5):
@@ -130,8 +139,7 @@ export class WorkflowEngine {
    * own cascade (see the class doc, "Unarchive re-evaluation").
    */
   private handleProjectUnarchived(event: ProjectEvent): void {
-    const projectId = event.data.id;
-    this.runCascade(() => this.reevaluateProject(projectId));
+    this.reevaluateProject(event.data.id);
   }
 
   /**
@@ -140,8 +148,11 @@ export class WorkflowEngine {
    * events for state the DB actually committed (task #244). The engine's own
    * task.status_changed subscription bypasses the buffer so cascade recursion
    * still drives synchronously inside the transaction.
+   *
+   * Returns false when the cascade rolled back; the error is logged with
+   * `label` (defaults to the generic cascade message).
    */
-  private runCascade(work: () => void): void {
+  private runCascade(work: () => void, label?: string): boolean {
     try {
       this.eventBus.runInTransaction(() => {
         const cascadeTx = this.db.transaction(() => {
@@ -155,33 +166,54 @@ export class WorkflowEngine {
         });
         cascadeTx();
       });
+      return true;
     } catch (error) {
       // Transaction rolled back AND event buffer discarded — log but don't
       // throw (this handler is called from EventBus which has its own
       // try/catch).
       this.cascadeError = null;
-      console.error('WorkflowEngine: cascade rolled back due to error:', error);
+      console.error(label ?? 'WorkflowEngine: cascade rolled back due to error:', error);
+      return false;
     }
   }
 
   /**
-   * Bring one just-unarchived project to the state it would have had: open
-   * every blocked task whose blockers are all done, then auto-complete every
-   * parent whose children are all done. Each write goes through the same
-   * checks as the normal cascade, and a completed parent drives the normal
-   * cascade from there (its own parent, its dependents).
+   * Bring one unarchived project to the state it would have had: open every
+   * blocked task whose blockers are all done, then auto-complete every parent
+   * whose children are all done. Each write goes through the same checks as
+   * the normal cascade, and a completed parent drives the normal cascade from
+   * there (its own parent, its dependents).
+   *
+   * WFT #2532: each candidate is its own cascade (one transaction, one event
+   * buffer), so a task whose write fails rolls back only its own cascade; the
+   * other candidates still commit. A failure is logged with the task and
+   * project ids and reported in `failedTaskIds`. The pass is idempotent, so it
+   * is safe to run again: `ProjectService.unarchiveProject` re-runs it on a
+   * repeated (no-op) unarchive, which is the retry path for a failed task.
+   *
+   * Does nothing when the project is archived (again) or gone.
    */
-  private reevaluateProject(projectId: number): void {
-    // Archived again (or deleted) since the event was emitted: frozen, skip.
+  reevaluateProject(projectId: number): ReevaluationResult {
+    const failedTaskIds: number[] = [];
     if (this.taskService.isProjectArchived(projectId)) {
-      return;
+      return { failedTaskIds };
     }
+    const attempt = (taskId: number, work: () => void): void => {
+      const ok = this.runCascade(
+        work,
+        `WorkflowEngine: unarchive re-evaluation of task ${taskId} in project ${projectId} rolled back:`,
+      );
+      if (!ok) {
+        failedTaskIds.push(taskId);
+      }
+    };
     for (const taskId of this.taskRepo.findUnblockableIds(projectId)) {
-      this.unblockIfAllBlockersDone(taskId);
+      attempt(taskId, () => this.unblockIfAllBlockersDone(taskId));
     }
     for (const parentId of this.taskRepo.findCompletableParentIds(projectId)) {
-      this.completeParentIfAllChildrenDone(parentId);
+      attempt(parentId, () => this.completeParentIfAllChildrenDone(parentId));
     }
+    return { failedTaskIds };
   }
 
   /**

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createTestApp } from '../../index.js';
 import { createMcpServer } from '../server.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -821,6 +821,75 @@ describe('MCP Project Tools', () => {
 
         expect(result.isError).toBe(true);
         expect(text(result)).toContain('not found');
+      });
+
+      // WFT #2532: the stdio server runs in its own process, built by the same
+      // createApp (src/mcp/index.ts) that starts the workflow engine, so a
+      // stdio unarchive re-evaluates the project like a REST one.
+      describe('re-evaluation after a stdio unarchive (WFT #2532)', () => {
+        function blockedDependentOfFinishedBlocker(): { projectId: number; dependentId: number } {
+          const live = app.projectService.createProject({ name: 'Live blockers' });
+          const project = app.projectService.createProject({ name: 'Comes back' });
+          const blocker = app.taskService.createTask({
+            title: 'Blocker',
+            project_id: live.id,
+            created_by: 't',
+          });
+          const dependent = app.taskService.createTask({
+            title: 'Dependent',
+            project_id: project.id,
+            created_by: 't',
+          });
+          app.dependencyService.addDependency({
+            task_id: blocker.id,
+            blocks_task_id: dependent.id,
+          });
+          app.taskService.updateTask(dependent.id, { status: 'blocked' });
+          app.projectService.archiveProject(
+            project.id,
+            { force: true, reason: 'paused' },
+            'tester',
+          );
+          app.taskService.updateTask(blocker.id, { status: 'in_progress' });
+          app.taskService.updateTask(blocker.id, { status: 'done' });
+          expect(app.taskService.getTask(dependent.id).status).toBe('blocked');
+          return { projectId: project.id, dependentId: dependent.id };
+        }
+
+        it('opens a task whose blockers all finished while the project was archived', async () => {
+          const { projectId, dependentId } = blockedDependentOfFinishedBlocker();
+
+          const result = await call('unarchive_project', { id: projectId });
+
+          expect(result.isError).toBeFalsy();
+          expect(app.taskService.getTask(dependentId).status).toBe('open');
+        });
+
+        it('a repeated stdio unarchive retries a task whose first re-evaluation failed', async () => {
+          const { projectId, dependentId } = blockedDependentOfFinishedBlocker();
+          const original = app.taskService.updateTask.bind(app.taskService);
+          const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+          const spy = vi
+            .spyOn(app.taskService, 'updateTask')
+            .mockImplementation((id: number, ...rest: unknown[]) => {
+              if (id === dependentId) {
+                throw new Error('simulated write failure');
+              }
+              return (original as (...args: unknown[]) => ReturnType<typeof original>)(id, ...rest);
+            });
+          try {
+            await call('unarchive_project', { id: projectId });
+          } finally {
+            spy.mockRestore();
+            errorSpy.mockRestore();
+          }
+          expect(app.taskService.getTask(dependentId).status).toBe('blocked');
+
+          const retry = await call('unarchive_project', { id: projectId });
+
+          expect(retry.isError).toBeFalsy();
+          expect(app.taskService.getTask(dependentId).status).toBe('open');
+        });
       });
     });
 

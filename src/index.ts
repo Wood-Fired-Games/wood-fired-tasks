@@ -369,6 +369,8 @@ export async function createApp(dbPath?: string): Promise<App> {
   // Create and start WorkflowEngine (with db for transaction atomicity)
   const workflowEngine = new WorkflowEngine(taskService, taskRepo, dependencyRepo, eventBus, db);
   workflowEngine.start();
+  // WFT #2532: a repeated (no-op) unarchive re-runs the re-evaluation.
+  projectService.setUnarchiveReevaluator(workflowEngine);
 
   // Phase 30 Plan 08 — start the device-flow store's periodic cleanup
   // exactly once at boot. The cleanup interval prunes expired sessions
@@ -392,6 +394,7 @@ export async function createApp(dbPath?: string): Promise<App> {
     // EventBus before the DB it relies on is gone. Order matters: a queued
     // event handler that fires post-close would otherwise hit a closed db.
     workflowEngine.stop();
+    projectService.setUnarchiveReevaluator(null);
     // Plan 30-08 — stop the device-flow cleanup interval. Idempotent: the
     // .stop() handle returned from startCleanup() guards against double-
     // calls internally so a sibling dispose path that also tears down the
