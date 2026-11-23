@@ -206,7 +206,9 @@ export class EventBus<Events extends Record<string, unknown>> {
         this.emitter.listenerCount('task.claim_released') +
         this.emitter.listenerCount('project.created') +
         this.emitter.listenerCount('project.updated') +
-        this.emitter.listenerCount('project.deleted'),
+        this.emitter.listenerCount('project.deleted') +
+        this.emitter.listenerCount('project.archived') +
+        this.emitter.listenerCount('project.unarchived'),
     };
   }
 }
@@ -225,6 +227,8 @@ type AppEvents = {
   'project.created': ProjectEvent;
   'project.updated': ProjectEvent;
   'project.deleted': ProjectEvent;
+  'project.archived': ProjectEvent;
+  'project.unarchived': ProjectEvent;
 };
 
 /**
