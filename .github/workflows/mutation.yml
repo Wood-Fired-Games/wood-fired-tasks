@@ -133,8 +133,8 @@ jobs:
             name: events-types-index
             globs: 'src/events/**/*.ts src/types/**/*.ts src/index.ts'
           - id: 17
-            name: api-plugins-auth # project-binding.ts lines 1-238 split to shard 24 (296 min before split)
-            globs: 'src/api/plugins/auth/index.ts src/api/plugins/auth/keys.ts src/api/plugins/auth/strategies/**/*.ts src/api/plugins/auth/project-binding.ts:239-9999'
+            name: api-plugins-auth # project-binding.ts lines 1-246 split to shard 24 (296 min before split)
+            globs: 'src/api/plugins/auth/index.ts src/api/plugins/auth/keys.ts src/api/plugins/auth/strategies/**/*.ts src/api/plugins/auth/project-binding.ts:247-9999'
           - id: 18
             name: api-routes-tasks # split from api-routes-resources
             globs: 'src/api/routes/tasks/**/*.ts'
@@ -155,7 +155,7 @@ jobs:
             globs: 'src/api/server.ts'
           - id: 24
             name: api-auth-binding-rules # split from api-plugins-auth: the route binding tables
-            globs: 'src/api/plugins/auth/project-binding.ts:1-238'
+            globs: 'src/api/plugins/auth/project-binding.ts:1-246'
           - id: 25
             name: cli-setup # split from cli: ~1070 mutants
             globs: 'src/cli/commands/setup.ts'
