@@ -66,7 +66,12 @@ import {
   type EventPayloadShape,
   type IdempotencyStore,
 } from './dispatch/index.js';
-import { findFirstMatchingOpenTask, sweepEventId } from './dispatch/startup-sweep.js';
+import {
+  createProjectLookupCache,
+  findFirstMatchingOpenTask,
+  sweepEventId,
+  type ProjectLookupCache,
+} from './dispatch/startup-sweep.js';
 import {
   agentSessionDispatch,
   createTaskInProject,
@@ -605,12 +610,14 @@ export class WftRouterDaemon {
    * down the live SSE pipeline.
    */
   private async runStartupSweep(rules: readonly TriggersRule[]): Promise<void> {
+    // One sweep, one project lookup per project across all its rules (WFT #2544).
+    const projectLookups = createProjectLookupCache();
     for (const rule of rules) {
       if (this.abortController.signal.aborted) {
         return;
       }
       try {
-        await this.sweepRule(rule);
+        await this.sweepRule(rule, projectLookups);
       } catch (err) {
         this.logger.warn(
           { rule_name: rule.name, error: err instanceof Error ? err.message : String(err) },
@@ -635,7 +642,8 @@ export class WftRouterDaemon {
       if (this.phase !== 'running') {
         return;
       }
-      const tick = this.sweepRule(rule).catch((err: unknown) => {
+      // Each tick is its own sweep of one rule: a fresh lookup cache.
+      const tick = this.sweepRule(rule, createProjectLookupCache()).catch((err: unknown) => {
         this.logger.warn(
           { rule_name: rule.name, error: err instanceof Error ? err.message : String(err) },
           'wft_router_periodic_sweep_failed',
@@ -646,12 +654,25 @@ export class WftRouterDaemon {
     this.intervalHandles.push(handle);
   }
 
-  /** Sweep ONE rule: query, predicate-match, then dispatch at most once. */
-  private async sweepRule(rule: TriggersRule): Promise<void> {
+  /**
+   * Sweep ONE rule: query, predicate-match, then dispatch at most once.
+   * `projectLookups` is shared by every rule of the same sweep. A failed
+   * project lookup logs `wft_router_sweep_project_lookup_failed` (once per
+   * project per sweep) and the rule runs as before; only a definite
+   * "archived" skips it (WFT #2544).
+   */
+  private async sweepRule(rule: TriggersRule, projectLookups: ProjectLookupCache): Promise<void> {
     const match = await findFirstMatchingOpenTask(rule, {
       apiBaseUrl: this.apiBaseUrl,
       authToken: this.apiKey,
       signal: this.abortController.signal,
+      projectLookups,
+      onProjectLookupFailed: ({ projectId, error }) => {
+        this.logger.warn(
+          { rule_name: rule.name, project_id: projectId, error },
+          'wft_router_sweep_project_lookup_failed',
+        );
+      },
       ...(this.fetchImpl !== undefined && { fetchImpl: this.fetchImpl }),
     });
     if (match === null) {

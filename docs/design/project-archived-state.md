@@ -288,7 +288,7 @@ Guards: `src/api/routes/tasks/__tests__/skill-enums.test.ts`;
 | File | Change |
 | --- | --- |
 | `src/config/event-types.ts` | Add the two event types. Guard: `src/events/__tests__/wft-router-event-types-sync.test.ts`. |
-| `src/dispatch/startup-sweep.ts` | A rule with a numeric `project:` queries `GET /tasks?project_id=N`, which by rule 2.5 still returns an archived project's tasks. The sweep must fetch the project once and skip it when archived. |
+| `src/dispatch/startup-sweep.ts` | A rule with a numeric `project:` queries `GET /tasks?project_id=N`, which by rule 2.5 still returns an archived project's tasks. The sweep must fetch the project once and skip it when archived. Rule for a failed lookup (WFT #2544): only a definite answer (2xx, `archived: true`) skips the rule. A 404, a 403, any other non-2xx, a transport error or an unparseable body logs `wft_router_sweep_project_lookup_failed` with the project id and the rule runs as before. Lookups, failed ones included, are cached per project per sweep: one cold-start sweep shares one cache across its rules, and each periodic tick starts a new one. A project-bound token can read its own project at the `read` tier and gets 403 for any other (pinned in `src/api/__tests__/pat-project-binding.test.ts`). |
 | `src/dispatch/predicate.ts`, `src/config/triggers-schema.ts` | No new `where:` key. Task events carry no archived flag and a frozen project emits no task events. |
 | `src/handlers/create-task-in-project.ts` | No code change: a 4xx is already non-retryable. Add a test for the 422. |
 | `triggers.example.yaml`, `README.md` | An example rule on `project.archived`. |

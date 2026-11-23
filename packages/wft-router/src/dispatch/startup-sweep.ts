@@ -110,6 +110,40 @@ export interface SweepQueryOptions {
   fetchImpl?: typeof fetch;
   /** External abort (the daemon's shutdown signal). */
   signal?: AbortSignal;
+  /**
+   * Project lookups shared by every rule of ONE sweep (WFT #2544), so a
+   * project is fetched at most once per sweep. Create one with
+   * {@link createProjectLookupCache} per sweep; omitted → no sharing.
+   */
+  projectLookups?: ProjectLookupCache;
+  /**
+   * Called once per failed project lookup (per cache entry). The rule then
+   * runs as if the project were live — see {@link ProjectLookup}.
+   */
+  onProjectLookupFailed?: (failure: { projectId: number; error: string }) => void;
+}
+
+/**
+ * The outcome of a project lookup (WFT #2544). The stated rule: ONLY a
+ * definite `archived` answer (a 2xx body with `archived: true`) skips the
+ * rule. A `failed` lookup — the project is gone (404), the token may not read
+ * it (403, e.g. a token bound to another project), a non-2xx, a transport
+ * error or an unparseable body — is reported and the rule runs exactly as it
+ * did before the archive check existed (fail open: an unreadable project must
+ * not silence a rule on every sweep). An external abort is not a failed
+ * lookup; it is rethrown.
+ */
+export type ProjectLookup =
+  | { state: 'archived' }
+  | { state: 'live' }
+  | { state: 'failed'; error: string };
+
+/** Per-sweep cache of project lookups, keyed by project id. */
+export type ProjectLookupCache = Map<number, Promise<ProjectLookup>>;
+
+/** A fresh, empty lookup cache — create one per sweep. */
+export function createProjectLookupCache(): ProjectLookupCache {
+  return new Map();
 }
 
 /** Result of a sweep query: the first matching open task's payload, or null. */
@@ -127,35 +161,72 @@ interface WireProject {
 }
 
 /**
- * True when the project is archived. Archived project state (design §3.8):
+ * Fetch one project and classify it. Archived project state (design §3.8):
  * `GET /tasks?project_id=N` still returns an archived project's tasks, so a
- * numeric `project:` rule must check the project itself, once per sweep.
- * Throws on transport failure, non-2xx or unparseable JSON — the caller
- * isolates the rule exactly as it does for a failed task-list query.
+ * numeric `project:` rule must check the project itself. Never throws except
+ * on an external abort; every other failure is a `failed` lookup
+ * (WFT #2544).
  */
-async function isProjectArchived(
+async function fetchProjectLookup(
   projectId: number,
   base: string,
   auth: { name: string; value: string },
   opts: SweepQueryOptions,
-): Promise<boolean> {
-  const res = await httpRequest({
-    method: 'GET',
-    url: `${base}/api/v1/projects/${String(projectId)}`,
-    headers: { [auth.name]: auth.value, Accept: 'application/json' },
-    ...(opts.fetchImpl !== undefined && { fetchImpl: opts.fetchImpl }),
-    ...(opts.signal !== undefined && { signal: opts.signal }),
-  });
-  if (res.status < 200 || res.status >= 300) {
-    throw new Error(`project lookup returned HTTP ${String(res.status)}`);
-  }
-  let parsed: WireProject;
+): Promise<ProjectLookup> {
+  let res: Awaited<ReturnType<typeof httpRequest>>;
   try {
-    parsed = JSON.parse(res.bodyText) as WireProject;
-  } catch {
-    throw new Error('project lookup returned unparseable JSON');
+    res = await httpRequest({
+      method: 'GET',
+      url: `${base}/api/v1/projects/${String(projectId)}`,
+      headers: { [auth.name]: auth.value, Accept: 'application/json' },
+      ...(opts.fetchImpl !== undefined && { fetchImpl: opts.fetchImpl }),
+      ...(opts.signal !== undefined && { signal: opts.signal }),
+    });
+  } catch (err) {
+    if (opts.signal?.aborted === true) {
+      throw err;
+    }
+    return { state: 'failed', error: err instanceof Error ? err.message : String(err) };
   }
-  return parsed.archived === true;
+  if (res.status < 200 || res.status >= 300) {
+    return { state: 'failed', error: `project lookup returned HTTP ${String(res.status)}` };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(res.bodyText);
+  } catch {
+    return { state: 'failed', error: 'project lookup returned unparseable JSON' };
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return { state: 'failed', error: 'project lookup returned a non-object body' };
+  }
+  // A body without `archived` comes from a server older than the archived
+  // state: such a project cannot be archived, so it is live.
+  return (parsed as WireProject).archived === true ? { state: 'archived' } : { state: 'live' };
+}
+
+/**
+ * Look a project up through the sweep's cache (one fetch per project per
+ * sweep) and report a failure once, when the fetch settles.
+ */
+function lookupProject(
+  projectId: number,
+  base: string,
+  auth: { name: string; value: string },
+  opts: SweepQueryOptions,
+): Promise<ProjectLookup> {
+  const cached = opts.projectLookups?.get(projectId);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const lookup = fetchProjectLookup(projectId, base, auth, opts).then((result) => {
+    if (result.state === 'failed') {
+      opts.onProjectLookupFailed?.({ projectId, error: result.error });
+    }
+    return result;
+  });
+  opts.projectLookups?.set(projectId, lookup);
+  return lookup;
 }
 
 /** Strip the trailing slash from the base URL so path joins are predictable. */
@@ -180,8 +251,9 @@ function authHeaderFor(token: string): { name: string; value: string } {
  * `evaluateWhere` for full fidelity. Paginates up to {@link SWEEP_MAX_PAGES}
  * pages of {@link SWEEP_PAGE_LIMIT}.
  *
- * Throws on transport failure or non-2xx — the caller (daemon) logs and
- * skips the rule; a failed sweep must never block the live SSE pipeline.
+ * Throws when the TASK-LIST query fails (transport or non-2xx) — the caller
+ * (daemon) logs and skips the rule; a failed sweep must never block the live
+ * SSE pipeline. A failed PROJECT lookup does not throw (WFT #2544).
  */
 export async function findFirstMatchingOpenTask(
   rule: TriggersRule,
@@ -190,14 +262,15 @@ export async function findFirstMatchingOpenTask(
   const auth = authHeaderFor(opts.authToken);
   const base = trimBase(opts.apiBaseUrl);
 
-  // An archived project is frozen: skip the rule (zero dispatches). A rule
-  // without a numeric `project:` needs no lookup — a cross-project task
-  // listing already drops archived projects' tasks by default.
-  if (
-    typeof rule.where.project === 'number' &&
-    (await isProjectArchived(rule.where.project, base, auth, opts))
-  ) {
-    return null;
+  // An archived project is frozen: skip the rule (zero dispatches) — but only
+  // on a definite "archived"; a failed lookup runs the rule (WFT #2544, see
+  // ProjectLookup). A rule without a numeric `project:` needs no lookup — a
+  // cross-project task listing already drops archived projects' tasks.
+  if (typeof rule.where.project === 'number') {
+    const lookup = await lookupProject(rule.where.project, base, auth, opts);
+    if (lookup.state === 'archived') {
+      return null;
+    }
   }
 
   const params = new URLSearchParams();

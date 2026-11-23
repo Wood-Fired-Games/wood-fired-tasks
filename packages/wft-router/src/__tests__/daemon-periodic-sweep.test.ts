@@ -389,7 +389,9 @@ describe('WftRouterDaemon — periodic re-sweep (task #1035)', () => {
 
     const flakyFetch = (async (input: RequestInfo | URL): Promise<Response> => {
       calls.push(String(input));
-      if (failNext) {
+      // Fail the TASK-LIST query: since WFT #2544 a failed project lookup no
+      // longer fails the tick (the rule runs), so the lookup is not the fault.
+      if (failNext && new URL(String(input)).pathname === '/api/v1/tasks') {
         failNext = false;
         throw new Error('connection refused');
       }
