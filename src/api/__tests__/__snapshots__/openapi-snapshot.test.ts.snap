@@ -959,6 +959,21 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                       "items": {
                         "additionalProperties": false,
                         "properties": {
+                          "archive_reason": {
+                            "nullable": true,
+                            "type": "string",
+                          },
+                          "archived": {
+                            "type": "boolean",
+                          },
+                          "archived_at": {
+                            "nullable": true,
+                            "type": "string",
+                          },
+                          "archived_by": {
+                            "nullable": true,
+                            "type": "string",
+                          },
                           "created_at": {
                             "type": "string",
                           },
@@ -2153,6 +2168,21 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
+                    "archive_reason": {
+                      "nullable": true,
+                      "type": "string",
+                    },
+                    "archived": {
+                      "type": "boolean",
+                    },
+                    "archived_at": {
+                      "nullable": true,
+                      "type": "string",
+                    },
+                    "archived_by": {
+                      "nullable": true,
+                      "type": "string",
+                    },
                     "created_at": {
                       "type": "string",
                     },
@@ -2798,6 +2828,21 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
+                    "archive_reason": {
+                      "nullable": true,
+                      "type": "string",
+                    },
+                    "archived": {
+                      "type": "boolean",
+                    },
+                    "archived_at": {
+                      "nullable": true,
+                      "type": "string",
+                    },
+                    "archived_by": {
+                      "nullable": true,
+                      "type": "string",
+                    },
                     "created_at": {
                       "type": "string",
                     },
@@ -3975,6 +4020,21 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
+                    "archive_reason": {
+                      "nullable": true,
+                      "type": "string",
+                    },
+                    "archived": {
+                      "type": "boolean",
+                    },
+                    "archived_at": {
+                      "nullable": true,
+                      "type": "string",
+                    },
+                    "archived_by": {
+                      "nullable": true,
+                      "type": "string",
+                    },
                     "created_at": {
                       "type": "string",
                     },

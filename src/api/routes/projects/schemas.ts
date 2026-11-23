@@ -41,6 +41,15 @@ export const ProjectResponseSchema = z.object({
   // precedence-2 fallback is then absent). Optional so legacy callers / partial
   // rows that omit the column do not fail response serialization.
   scm: ScmCharterSchema.nullable().optional(),
+  // Archived project state (migration 021): `archived` is derived from
+  // `archived_at` by the repository. All four are optional so a response from
+  // an older server (which has none of them) still parses and reads as "not
+  // archived". They MUST be listed here: this is a non-strict z.object, so any
+  // field missing from it is silently stripped from every REST response.
+  archived: z.boolean().optional(),
+  archived_at: z.string().nullable().optional(),
+  archived_by: z.string().nullable().optional(),
+  archive_reason: z.string().nullable().optional(),
 });
 
 export const ProjectListResponseSchema = z.array(ProjectResponseSchema);

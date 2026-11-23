@@ -236,7 +236,32 @@ export interface Project {
    * `src/schemas/scm-charter.schema.ts`.
    */
   scm: ScmCharter | null;
+  /**
+   * Archived project state (migration 021). Derived, not stored: `true`
+   * exactly when `archived_at` is not null. An archived project is frozen for
+   * writes and hidden from default listings; reads by id still work.
+   */
+  archived: boolean;
+  /** ISO8601 timestamp of the archive; NULL when the project is not archived. */
+  archived_at: string | null;
+  /**
+   * The authenticated caller that archived the project (never taken from a
+   * request body); NULL when the project is not archived.
+   */
+  archived_by: string | null;
+  /** Optional free-text reason given at archive time (max 500 chars). */
+  archive_reason: string | null;
 }
+
+/**
+ * Archived project state: the one listing filter shared by every project and
+ * task listing surface.
+ *   exclude → archived projects (and their tasks) are omitted. The default.
+ *   include → archived and unarchived are both returned.
+ *   only    → nothing but archived projects (or their tasks).
+ */
+export const ARCHIVED_FILTERS = ['exclude', 'include', 'only'] as const;
+export type ArchivedFilter = (typeof ARCHIVED_FILTERS)[number];
 
 export interface TaskTag {
   id: number;
@@ -429,6 +454,12 @@ export interface TaskFilters {
    * Implemented via json_extract on `$.verdict`.
    */
   verified?: boolean;
+  /**
+   * Archived project state: whether tasks of archived projects are listed.
+   * Applies only when `project_id` is absent — asking for a project by id
+   * always returns its tasks, archived or not. `undefined` means `exclude`.
+   */
+  archived?: ArchivedFilter;
   /** Pagination: max rows to return. Repository default applies if omitted. */
   limit?: number;
   /** Pagination: zero-based row offset. Defaults to 0. */
