@@ -36,6 +36,7 @@ import {
   type VerificationEvidence as VerificationEvidenceInput,
 } from '../schemas/task.schema.js';
 import { ValidationError, BusinessError, NotFoundError } from './errors.js';
+import { assertProjectWritable } from './project-write-guard.js';
 import type { DependencyService } from './dependency.service.js';
 import { FtsSyntaxError } from '../repositories/errors.js';
 import { eventBus } from '../events/event-bus.js';
@@ -218,6 +219,18 @@ export class TaskService {
     private readonly wsjfHistoryRepo?: IWsjfHistoryRepository,
     private readonly dependencyService?: DependencyService,
   ) {}
+
+  /**
+   * Archived project state: throws the `project_archived` BusinessError (422)
+   * when `projectId` is archived. Called by every client-reachable task write
+   * — create (subtasks included), update, delete and claim. Reads are not
+   * guarded. `autoSizeTask` is not guarded either: its only caller outside
+   * the guarded create/update paths is the internal boot-time size backfill,
+   * which must not fail on a force-archived project's unsized tasks.
+   */
+  private assertProjectWritable(projectId: number): void {
+    assertProjectWritable(this.projectRepo, projectId);
+  }
 
   /**
    * WSJF (#628): is the in-transaction audit hook wired? True only when BOTH a
@@ -490,6 +503,9 @@ export class TaskService {
     if (!project) {
       throw new BusinessError(`Project with id ${result.data.project_id} does not exist`);
     }
+    // Archived project state: no new tasks or subtasks in a frozen project.
+    // (A subtask's parent must be in the same project, so this covers both.)
+    this.assertProjectWritable(result.data.project_id);
 
     // Validate parent_task_id if provided
     if (result.data.parent_task_id) {
@@ -772,6 +788,10 @@ export class TaskService {
     if (!existing) {
       throw new NotFoundError('Task', id);
     }
+    // Archived project state: no task writes in a frozen project — whatever
+    // the `source`. A workflow cascade that reaches into an archived project
+    // is refused like any other write (the engine isolates the error).
+    this.assertProjectWritable(existing.project_id);
 
     // task #608 (PIECE A) / #1624 (M2 audit finding): server-side
     // anti-fabrication validation of verification_evidence, gated behind
@@ -1027,6 +1047,8 @@ export class TaskService {
     if (!existing) {
       throw new NotFoundError('Task', id);
     }
+    // Archived project state: tasks of a frozen project cannot be deleted.
+    this.assertProjectWritable(existing.project_id);
 
     // Emit task.deleted event BEFORE deletion so consumers can still query related entities
     eventBus.emit('task.deleted', {
@@ -1095,6 +1117,9 @@ export class TaskService {
     if (!existing) {
       throw new NotFoundError('Task', taskId);
     }
+    // Archived project state: no claims — and no claim renewals — in a frozen
+    // project. A claim still held there lapses through the TTL sweep.
+    this.assertProjectWritable(existing.project_id);
 
     // Task #1003: claim RENEWAL (heartbeat). A claim_task call by the SAME
     // assignee on a task they already hold in_progress refreshes claimed_at

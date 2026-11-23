@@ -323,4 +323,45 @@ describe('ClaimReleaseService', () => {
       vi.useRealTimers();
     });
   });
+
+  // --- Archived project state (docs/design/project-archived-state.md §3.3) ---
+  // The sweep is deliberately NOT behind the project_archived write guard:
+  // releasing a stale claim on a task in a force-archived project is still
+  // correct, otherwise the claim would be held forever.
+
+  describe('force-archived project', () => {
+    beforeEach(() => {
+      db.prepare(
+        `UPDATE projects
+         SET archived_at = '2026-11-23T12:00:00.000Z', archived_by = 'alice',
+             archive_reason = 'forced'
+         WHERE id = ?`,
+      ).run(projectId);
+    });
+
+    it('still releases a stale claim on a task in a force-archived project', () => {
+      createClaimedTask({ title: 'Stale in archived project', claimedMinutesAgo: 45 });
+      const taskId = (db.prepare('SELECT MAX(id) as id FROM tasks').get() as { id: number }).id;
+      const emitSpy = vi.spyOn(eventBus, 'emit');
+
+      expect(service.findStaleClaims().map((c) => c.id)).toEqual([taskId]);
+      expect(service.sweep()).toBe(1);
+
+      expect(
+        db.prepare('SELECT status, assignee, claimed_at FROM tasks WHERE id = ?').get(taskId),
+      ).toEqual({ status: 'open', assignee: null, claimed_at: null });
+      expect(emitSpy.mock.calls.map(([type]) => type)).toContain('task.claim_released');
+      emitSpy.mockRestore();
+    });
+
+    it('leaves the project archived after the sweep', () => {
+      createClaimedTask({ title: 'Stale in archived project', claimedMinutesAgo: 45 });
+
+      service.sweep();
+
+      expect(
+        db.prepare('SELECT archived_at, archived_by FROM projects WHERE id = ?').get(projectId),
+      ).toEqual({ archived_at: '2026-11-23T12:00:00.000Z', archived_by: 'alice' });
+    });
+  });
 });
