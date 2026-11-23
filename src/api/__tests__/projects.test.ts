@@ -250,3 +250,275 @@ describe('Project CRUD Routes', () => {
     expect(response.statusCode).toBe(204);
   });
 });
+
+/**
+ * Archived project state (docs/design/project-archived-state.md §2.2, §2.5,
+ * §2.6): POST /:id/archive, POST /:id/unarchive and the `archived` list filter.
+ */
+describe('Project archive routes', () => {
+  let server: FastifyInstance;
+  let db: Database.Database;
+  let headers: { Authorization: string };
+
+  beforeAll(async () => {
+    const result = await createServer({ dbPath: ':memory:' });
+    server = result.server;
+    db = result.app.db;
+    headers = authHeaders(db, { displayName: 'archiver-alice' });
+  });
+
+  afterAll(async () => {
+    await server.close();
+    db.close();
+  });
+
+  async function createProject(name: string): Promise<number> {
+    const res = await server.inject({
+      method: 'POST',
+      url: '/api/v1/projects',
+      headers,
+      payload: { name },
+    });
+    expect(res.statusCode).toBe(201);
+    return JSON.parse(res.body).id;
+  }
+
+  async function createTask(projectId: number): Promise<number> {
+    const res = await server.inject({
+      method: 'POST',
+      url: '/api/v1/tasks',
+      headers,
+      payload: { title: 'unfinished', project_id: projectId, created_by: 'test-user' },
+    });
+    expect(res.statusCode).toBe(201);
+    return JSON.parse(res.body).id;
+  }
+
+  function post(url: string, payload?: unknown, h = headers) {
+    return server.inject({
+      method: 'POST',
+      url,
+      headers: h,
+      ...(payload !== undefined ? { payload: payload as object } : {}),
+    });
+  }
+
+  it('POST /:id/archive returns 200 and the archived project; archived_by is the caller', async () => {
+    const id = await createProject('archive-200');
+    const res = await post(`/api/v1/projects/${id}/archive`, { reason: '  shipped  ' });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.id).toBe(id);
+    expect(body.archived).toBe(true);
+    expect(body.archived_at).toEqual(expect.any(String));
+    expect(body.archived_by).toBe('archiver-alice');
+    expect(body.archive_reason).toBe('shipped');
+  });
+
+  it('archive works with no body at all', async () => {
+    const id = await createProject('archive-no-body');
+    const res = await post(`/api/v1/projects/${id}/archive`);
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).archived).toBe(true);
+  });
+
+  it('archived_by cannot be supplied in the body', async () => {
+    const id = await createProject('archive-spoof');
+    const res = await post(`/api/v1/projects/${id}/archive`, { archived_by: 'mallory' });
+    // Whether the unknown key is rejected or dropped, it never becomes the actor.
+    if (res.statusCode === 200) {
+      expect(JSON.parse(res.body).archived_by).toBe('archiver-alice');
+    } else {
+      expect(res.statusCode).toBe(400);
+      const get = await server.inject({ method: 'GET', url: `/api/v1/projects/${id}`, headers });
+      expect(JSON.parse(get.body).archived).toBe(false);
+    }
+  });
+
+  it('archive of an already archived project returns it unchanged', async () => {
+    const id = await createProject('archive-twice');
+    const first = JSON.parse(
+      (await post(`/api/v1/projects/${id}/archive`, { reason: 'one' })).body,
+    );
+    const again = await post(`/api/v1/projects/${id}/archive`, { reason: 'two' });
+    expect(again.statusCode).toBe(200);
+    expect(JSON.parse(again.body)).toEqual(first);
+  });
+
+  it('archive returns 404 for a project that does not exist', async () => {
+    const res = await post('/api/v1/projects/999999/archive', {});
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('archive returns 422 with per-status counts while tasks are unfinished', async () => {
+    const id = await createProject('archive-422');
+    await createTask(id);
+    const res = await post(`/api/v1/projects/${id}/archive`, {});
+
+    expect(res.statusCode).toBe(422);
+    const body = JSON.parse(res.body);
+    expect(body.error).toBe('BUSINESS_RULE_VIOLATION');
+    expect(body.message).toMatch(/^project_has_unfinished_tasks/);
+    expect(body.message).toContain('open: 1');
+    const get = await server.inject({ method: 'GET', url: `/api/v1/projects/${id}`, headers });
+    expect(JSON.parse(get.body).archived).toBe(false);
+  });
+
+  it('force with a reason archives despite unfinished tasks; force without a reason is 400', async () => {
+    const id = await createProject('archive-force');
+    await createTask(id);
+
+    const noReason = await post(`/api/v1/projects/${id}/archive`, { force: true });
+    expect(noReason.statusCode).toBe(400);
+
+    const forced = await post(`/api/v1/projects/${id}/archive`, { force: true, reason: 'shelved' });
+    expect(forced.statusCode).toBe(200);
+    expect(JSON.parse(forced.body).archived).toBe(true);
+  });
+
+  it('a write on an archived project is 422 project_archived', async () => {
+    const id = await createProject('archive-frozen');
+    await post(`/api/v1/projects/${id}/archive`, {});
+    const res = await server.inject({
+      method: 'PUT',
+      url: `/api/v1/projects/${id}`,
+      headers,
+      payload: { description: 'nope' },
+    });
+    expect(res.statusCode).toBe(422);
+    expect(JSON.parse(res.body).message).toMatch(/^project_archived/);
+  });
+
+  it('POST /:id/unarchive returns 200 and the project, and is a no-op when not archived', async () => {
+    const id = await createProject('unarchive-200');
+    await post(`/api/v1/projects/${id}/archive`, { reason: 'x' });
+
+    const res = await post(`/api/v1/projects/${id}/unarchive`);
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.id).toBe(id);
+    expect(body.archived).toBe(false);
+    expect(body.archived_at).toBeNull();
+    expect(body.archived_by).toBeNull();
+    expect(body.archive_reason).toBeNull();
+
+    const again = await post(`/api/v1/projects/${id}/unarchive`);
+    expect(again.statusCode).toBe(200);
+    expect(JSON.parse(again.body).archived).toBe(false);
+  });
+
+  it('unarchive returns 404 for a project that does not exist', async () => {
+    const res = await post('/api/v1/projects/999999/unarchive');
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('both routes need the write scope: a read token gets 403', async () => {
+    const id = await createProject('archive-scope');
+    const readOnly = authHeaders(db, { displayName: 'reader', scopes: ['read'] });
+
+    const archive = await post(`/api/v1/projects/${id}/archive`, {}, readOnly);
+    expect(archive.statusCode).toBe(403);
+    const unarchive = await post(`/api/v1/projects/${id}/unarchive`, undefined, readOnly);
+    expect(unarchive.statusCode).toBe(403);
+
+    const get = await server.inject({ method: 'GET', url: `/api/v1/projects/${id}`, headers });
+    expect(JSON.parse(get.body).archived).toBe(false);
+  });
+
+  it('both routes need authentication', async () => {
+    const id = await createProject('archive-anon');
+    const archive = await server.inject({
+      method: 'POST',
+      url: `/api/v1/projects/${id}/archive`,
+      payload: {},
+    });
+    expect(archive.statusCode).toBe(401);
+    const unarchive = await server.inject({
+      method: 'POST',
+      url: `/api/v1/projects/${id}/unarchive`,
+    });
+    expect(unarchive.statusCode).toBe(401);
+  });
+
+  describe('GET /projects archived filter', () => {
+    let listServer: FastifyInstance;
+    let listDb: Database.Database;
+    let h: { Authorization: string };
+    let liveId: number;
+    let archivedId: number;
+
+    beforeAll(async () => {
+      const result = await createServer({ dbPath: ':memory:' });
+      listServer = result.server;
+      listDb = result.app.db;
+      h = authHeaders(listDb);
+      liveId = result.app.projectService.createProject({ name: 'live' }).id;
+      archivedId = result.app.projectService.createProject({ name: 'archived' }).id;
+      result.app.projectService.archiveProject(archivedId, {}, 'tester');
+    });
+
+    afterAll(async () => {
+      await listServer.close();
+      listDb.close();
+    });
+
+    async function list(query: string) {
+      const res = await listServer.inject({
+        method: 'GET',
+        url: `/api/v1/projects${query}`,
+        headers: h,
+      });
+      return { status: res.statusCode, body: JSON.parse(res.body) };
+    }
+
+    it('omits archived projects by default, and total counts the filtered set', async () => {
+      const { status, body } = await list('');
+      expect(status).toBe(200);
+      expect(body.data.map((p: { id: number }) => p.id)).toEqual([liveId]);
+      expect(body.total).toBe(1);
+    });
+
+    it('archived=exclude is the default spelled out', async () => {
+      const { body } = await list('?archived=exclude');
+      expect(body.data.map((p: { id: number }) => p.id)).toEqual([liveId]);
+      expect(body.total).toBe(1);
+    });
+
+    it('archived=include returns both, total 2', async () => {
+      const { body } = await list('?archived=include');
+      expect(body.data.map((p: { id: number }) => p.id).sort()).toEqual(
+        [liveId, archivedId].sort(),
+      );
+      expect(body.total).toBe(2);
+    });
+
+    it('archived=only returns only the archived project, total 1', async () => {
+      const { body } = await list('?archived=only');
+      expect(body.data.map((p: { id: number }) => p.id)).toEqual([archivedId]);
+      expect(body.total).toBe(1);
+      expect(body.data[0].archived).toBe(true);
+    });
+
+    it('total stays the filtered count when the page is smaller', async () => {
+      const { body } = await list('?archived=include&limit=1');
+      expect(body.data).toHaveLength(1);
+      expect(body.total).toBe(2);
+    });
+
+    it('rejects an unknown archived value with 400', async () => {
+      const { status } = await list('?archived=sometimes');
+      expect(status).toBe(400);
+    });
+
+    it('GET /:id still returns an archived project', async () => {
+      const res = await listServer.inject({
+        method: 'GET',
+        url: `/api/v1/projects/${archivedId}`,
+        headers: h,
+      });
+      expect(res.statusCode).toBe(200);
+      expect(JSON.parse(res.body).archived).toBe(true);
+    });
+  });
+});

@@ -167,6 +167,10 @@ const BINDING_RULES: Record<string, BindingRule> = {
 
   // ── project id in the path ──────────────────────────────────────────────
   '/api/v1/projects/:id': { kind: 'resolve', sources: [{ from: 'projectParam', key: 'id' }] },
+  '/api/v1/projects/:id/archive': {
+    kind: 'resolve',
+    sources: [{ from: 'projectParam', key: 'id' }],
+  },
   '/api/v1/projects/:id/charter-history': {
     kind: 'resolve',
     sources: [{ from: 'projectParam', key: 'id' }],
@@ -188,6 +192,10 @@ const BINDING_RULES: Record<string, BindingRule> = {
     sources: [{ from: 'projectParam', key: 'id' }],
   },
   '/api/v1/projects/:id/topology': {
+    kind: 'resolve',
+    sources: [{ from: 'projectParam', key: 'id' }],
+  },
+  '/api/v1/projects/:id/unarchive': {
     kind: 'resolve',
     sources: [{ from: 'projectParam', key: 'id' }],
   },
