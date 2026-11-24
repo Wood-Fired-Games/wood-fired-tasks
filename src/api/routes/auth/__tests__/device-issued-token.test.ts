@@ -455,6 +455,26 @@ describe('device sign-in: issued token', () => {
       expect(tokenRows(h.db)).toHaveLength(0);
     });
 
+    it.each([
+      ['approve twice', 'action=approve&action=approve'],
+      ['approve and deny', 'action=approve&action=deny'],
+      ['deny and approve', 'action=deny&action=approve'],
+    ])('a repeated action field (%s) is refused and changes nothing', async (_label, actions) => {
+      const { device_code, user_code } = await startSignIn(h.app, 'laptop');
+      const cookie = await signIn(h.app, h.userA);
+      const page = await openApprovalPage(h.app, cookie, user_code);
+      const base = new URLSearchParams({ ...hiddenFields(page.body), user_code }).toString();
+      const res = await h.app.inject({
+        method: 'POST',
+        url: '/auth/device/verify',
+        payload: `${base}&${actions}`,
+        headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: page.cookie },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(findByDeviceCode(device_code)?.status).toBe('pending');
+      expect(tokenRows(h.db)).toHaveLength(0);
+    });
+
     it('continue with a confirmed code shows the page again and approves nothing', async () => {
       const { device_code, user_code } = await startSignIn(h.app, 'laptop');
       const cookie = await signIn(h.app, h.userA);
@@ -506,20 +526,34 @@ describe('device sign-in: issued token', () => {
       const token = findByDeviceCode(device_code)?.mintedToken ?? '';
       expect(token).toMatch(/^wft_pat_/);
 
+      // Every value the handler writes is pinned exactly, so no part of the
+      // token or its hash can be present. The remaining columns (id,
+      // timestamp, hash-chain links) are produced by the repository from
+      // the row content, and request_id is Fastify's request counter.
       const rows = allRows();
-      expect(rows.length).toBeGreaterThan(0);
+      expect(rows).toHaveLength(1);
+      const row = rows[0] as AuditEventRow;
+      expect({
+        actor_type: row.actor_type,
+        actor_id: row.actor_id,
+        token_id: row.token_id,
+        action: row.action,
+        resource_type: row.resource_type,
+        resource_id: row.resource_id,
+        metadata: row.metadata,
+      }).toEqual({
+        actor_type: 'user',
+        actor_id: String(h.userA),
+        token_id: null,
+        action: 'device_sign_in.token_issued',
+        resource_type: 'api_tokens',
+        resource_id: String(findByDeviceCode(device_code)?.mintedTokenId),
+        metadata: { via: 'device_flow', machine: 'laptop' },
+      });
+      expect(row.request_id).toMatch(/^req-[0-9a-z]+$/);
       const dump = JSON.stringify(rows);
       expect(dump).not.toContain(token);
       expect(dump).not.toContain(hashToken(token));
-      // No fragment either: no 6-character run of the token's random part
-      // or of its hash appears anywhere in the trail.
-      const secretPart = token.slice('wft_pat_'.length);
-      const hash = hashToken(token);
-      for (const s of [secretPart, hash]) {
-        for (let i = 0; i + 6 <= s.length; i++) {
-          expect(dump).not.toContain(s.slice(i, i + 6));
-        }
-      }
     });
 
     it('records no issuance when nothing is issued (Deny, refused second submission)', async () => {
@@ -545,6 +579,51 @@ describe('device sign-in: issued token', () => {
       const rows = issuanceRows();
       expect(rows).toHaveLength(1);
       expect(rows[0]?.actor_id).toBe(String(h.userA));
+    });
+
+    it('after a failed audit write the approver can retry and receives a new, recorded token', async () => {
+      const { device_code, user_code } = await startSignIn(h.app, 'laptop');
+      const spy = vi.spyOn(h.auditEvents, 'append').mockImplementationOnce(() => {
+        throw new Error('audit store unavailable');
+      });
+      expect((await approveAs(h.app, h.userA, user_code)).statusCode).toBe(500);
+      spy.mockRestore();
+      const first = tokenRows(h.db)[0] as TokenRow;
+      expect(first.revoked_at).not.toBeNull();
+
+      expect((await approveAs(h.app, h.userA, user_code)).statusCode).toBe(200);
+      const rows = tokenRows(h.db);
+      expect(rows).toHaveLength(2);
+      const second = rows[1] as TokenRow;
+      expect(second.revoked_at).toBeNull();
+      expect(issuanceRows().map((r) => r.resource_id)).toEqual([String(second.id)]);
+      const delivered = await poll(h.app, device_code);
+      expect(delivered.statusCode).toBe(200);
+      expect(delivered.json['token_id']).toBe(second.id);
+    });
+
+    it('when the audit write and the revoke both fail, nothing is delivered and both failures are logged', async () => {
+      const { device_code, user_code } = await startSignIn(h.app, 'laptop');
+      const appendSpy = vi.spyOn(h.auditEvents, 'append').mockImplementation(() => {
+        throw new Error('audit store unavailable');
+      });
+      const revokeSpy = vi.spyOn(h.app.apiTokenRepository, 'revoke').mockImplementation(() => {
+        throw new Error('database busy');
+      });
+      const r = await approveAs(h.app, h.userA, user_code);
+      appendSpy.mockRestore();
+      revokeSpy.mockRestore();
+
+      expect(r.statusCode).toBe(500);
+      expect(findByDeviceCode(device_code)?.mintedToken).toBeNull();
+      expect((await poll(h.app, device_code)).json['error']).toBe('authorization_pending');
+      const tokenId = (tokenRows(h.db)[0] as TokenRow).id;
+      expect(
+        h.logs.some((l) => l['msg'] === 'audit.append_failed' && l['tokenId'] === tokenId),
+      ).toBe(true);
+      expect(
+        h.logs.some((l) => l['event'] === 'pat_orphan_revoke_failed' && l['tokenId'] === tokenId),
+      ).toBe(true);
     });
 
     it('no token is delivered when the issuance cannot be recorded', async () => {
