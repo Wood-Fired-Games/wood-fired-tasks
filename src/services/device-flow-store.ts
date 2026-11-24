@@ -365,13 +365,14 @@ export function tokenName(sanitizedHostname: string, now: Date = new Date()): st
  * order caller minting a PAT while the user is still in the `pending`
  * (or worse, `denied`) state.
  *
- * Idempotency: a second call with the same args is treated as a no-op
- * (returns true). This makes the verify handler safe against an accidental
- * double-submit without leaking a fresh token.
+ * One token per session: a second call with the same args is a no-op
+ * (returns true); a call carrying a different token for a session that
+ * already holds one returns false and leaves the stored token in place.
  *
  * Returns false (no mutation) when:
  *   - session not found (unknown userCode), OR
- *   - session.status !== 'approved'.
+ *   - session.status !== 'approved', OR
+ *   - the session already holds a different token.
  */
 export function recordMintedToken(
   userCode: string,
@@ -380,6 +381,9 @@ export function recordMintedToken(
   const session = findByUserCode(userCode);
   if (!session) return false;
   if (session.status !== 'approved') return false;
+  if (session.mintedTokenId !== null) {
+    return session.mintedTokenId === args.tokenId && session.mintedToken === args.token;
+  }
   session.mintedTokenId = args.tokenId;
   session.mintedToken = args.token;
   return true;

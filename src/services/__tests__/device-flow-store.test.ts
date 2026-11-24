@@ -369,6 +369,16 @@ describe('device-flow-store', () => {
         expect(after?.mintedTokenId).toBe(9);
         expect(after?.mintedToken).toBe('wft_pat_A');
       });
+
+      it('keeps the first token: a different token for the same session is refused', () => {
+        const s = createSession({ clientId: 'cid', hostname: 'laptop' });
+        approve(s.userCode, 7);
+        expect(recordMintedToken(s.userCode, { tokenId: 9, token: 'wft_pat_A' })).toBe(true);
+        expect(recordMintedToken(s.userCode, { tokenId: 10, token: 'wft_pat_B' })).toBe(false);
+        const after = findByDeviceCode(s.deviceCode);
+        expect(after?.mintedTokenId).toBe(9);
+        expect(after?.mintedToken).toBe('wft_pat_A');
+      });
     });
   });
 });

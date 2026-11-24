@@ -226,4 +226,64 @@ describe('device sign-in: issued token', () => {
       expect(grantSatisfiesScope(scopes, 'read')).toBe(true);
     });
   });
+
+  describe('one approver, one token per session', () => {
+    it('two users: the second submission of an approved code is refused and the CLI receives the first approver’s token', async () => {
+      // User A's CLI starts a sign-in and user A approves it.
+      const { device_code, user_code } = await startSignIn(h.app, 'laptop-a');
+      const first = await approveAs(h.app, h.userA, user_code);
+      expect(first.statusCode).toBe(200);
+      const afterFirst = findByDeviceCode(device_code);
+      const tokenA = afterFirst?.mintedToken;
+      const tokenIdA = afterFirst?.mintedTokenId;
+      expect(tokenA).toMatch(/^wft_pat_/);
+
+      // Before the CLI polls, user B submits the same code.
+      const second = await approveAs(h.app, h.userB, user_code);
+      expect(second.statusCode).toBe(400);
+      expect(second.body.toLowerCase()).not.toContain('<h1>approved</h1>');
+
+      // Nothing was issued to user B and the session still holds A's token.
+      const rows = tokenRows(h.db);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.user_id).toBe(h.userA);
+      expect(rows[0]?.revoked_at).toBeNull();
+      const afterSecond = findByDeviceCode(device_code);
+      expect(afterSecond?.approvedUserId).toBe(h.userA);
+      expect(afterSecond?.mintedToken).toBe(tokenA);
+      expect(afterSecond?.mintedTokenId).toBe(tokenIdA);
+
+      // The CLI started by user A receives user A's token.
+      const delivered = await poll(h.app, device_code);
+      expect(delivered.statusCode).toBe(200);
+      expect(delivered.json['token']).toBe(tokenA);
+      expect(delivered.json['token_id']).toBe(tokenIdA);
+      expect((delivered.json['user'] as { id: number }).id).toBe(h.userA);
+    });
+
+    it('the issued token belongs to the user who approved the session', async () => {
+      const { device_code, user_code } = await startSignIn(h.app, 'laptop-b');
+      expect((await approveAs(h.app, h.userB, user_code)).statusCode).toBe(200);
+      const session = findByDeviceCode(device_code);
+      expect(session?.approvedUserId).toBe(h.userB);
+      const rows = tokenRows(h.db);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.user_id).toBe(h.userB);
+      expect(rows[0]?.id).toBe(session?.mintedTokenId);
+    });
+
+    it('a repeat approval by the same user issues no second token', async () => {
+      const { device_code, user_code } = await startSignIn(h.app, 'laptop-a');
+      expect((await approveAs(h.app, h.userA, user_code)).statusCode).toBe(200);
+      const tokenA = findByDeviceCode(device_code)?.mintedToken;
+
+      const repeat = await approveAs(h.app, h.userA, user_code);
+      expect(repeat.statusCode).toBe(200);
+
+      const rows = tokenRows(h.db);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.revoked_at).toBeNull();
+      expect(findByDeviceCode(device_code)?.mintedToken).toBe(tokenA);
+    });
+  });
 });

@@ -184,9 +184,6 @@ const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fasti
       const now = Date.now();
       const expired =
         session === undefined || session.status === 'expired' || now > session.expiresAt;
-      // Plan 30-04 will treat status==='approved' (with a different userId)
-      // as a no-op too; for this plan the approve() helper's own idempotency
-      // is the source of truth.
       if (expired || session.status === 'denied') {
         const csrfToken = getOrCreateCsrfToken(request);
         const html = renderDevicePage({
@@ -199,8 +196,23 @@ const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fasti
 
       // 4. Approve. requireUser() narrows request.user — the chain's
       //    sessionOnly gate has already proved session auth at this point.
+      //    Only a pending session can be approved. A repeat submission by
+      //    the user who already approved it is answered with the success
+      //    page and issues nothing new; any other non-pending session is
+      //    refused.
       const user = requireUser(request);
-      approve(userCode, user.id);
+      if (session.status !== 'pending') {
+        const sameApprover = session.status === 'approved' && session.approvedUserId === user.id;
+        if (sameApprover && session.mintedToken !== null) {
+          return replyHtml(reply, 200, renderDeviceApprovedPage());
+        }
+        if (!sameApprover) {
+          return replyHtml(reply, 400, renderUsedCodePage(request));
+        }
+      }
+      if (!approve(userCode, user.id)) {
+        return replyHtml(reply, 400, renderUsedCodePage(request));
+      }
 
       // Audit log — userId only. user_code MUST NOT appear (Threat T-30-02-06).
       request.log.info(
@@ -226,14 +238,16 @@ const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fasti
       // The store guarantees this lookup is non-null at this point
       // (approve() returned successfully, no concurrent remove()). The
       // narrow is a type-system requirement, not a runtime expectation.
-      if (!approvedSession) {
+      if (!approvedSession || approvedSession.approvedUserId === null) {
         throw new Error('device-flow: session vanished between approve() and mint');
       }
+      // The issued token belongs to the user recorded as the approver.
+      const approverId = approvedSession.approvedUserId;
       const name = tokenName(approvedSession.hostname ?? 'unknown');
       try {
         const { token, prefix, suffix, hash } = generateToken();
         const row = fastify.apiTokenRepository.insert({
-          userId: user.id,
+          userId: approverId,
           name,
           prefix,
           suffix,
@@ -258,13 +272,13 @@ const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fasti
           // Best-effort revoke — if THIS fails too, log + carry on; the
           // outer catch will render the same error page.
           try {
-            fastify.apiTokenRepository.revoke(row.id, user.id);
+            fastify.apiTokenRepository.revoke(row.id, approverId);
           } catch (revokeErr) {
             request.log.error(
               {
                 err: revokeErr,
                 event: 'pat_orphan_revoke_failed',
-                userId: user.id,
+                userId: approverId,
                 tokenId: row.id,
               },
               'failed to revoke orphan PAT after recordMintedToken returned false',
@@ -273,7 +287,7 @@ const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fasti
           request.log.warn(
             {
               event: 'device_flow_mint_stash_failed',
-              userId: user.id,
+              userId: approverId,
               tokenId: row.id,
             },
             'recordMintedToken returned false — session not in approved state; orphan PAT revoked',
@@ -292,7 +306,7 @@ const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fasti
           {
             event: 'pat_minted',
             via: 'device_flow',
-            userId: user.id,
+            userId: approverId,
             tokenId: row.id,
           },
           'pat minted via device flow',
@@ -304,7 +318,7 @@ const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fasti
         // until the device-code TTL elapses (graceful degradation per
         // Threat T-30-04-05 disposition).
         request.log.error(
-          { err, event: 'pat_mint_failed', userId: user.id },
+          { err, event: 'pat_mint_failed', userId: approverId },
           'pat mint failed during device flow',
         );
         const csrfToken = getOrCreateCsrfToken(request);
@@ -321,6 +335,15 @@ const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fasti
     },
   );
 };
+
+/** The approval form with the message for a code that can no longer be approved. */
+function renderUsedCodePage(request: FastifyRequest): string {
+  return renderDevicePage({
+    csrfToken: getOrCreateCsrfToken(request),
+    prefilledUserCode: null,
+    errorMessage: 'That code has already been used. Please run `tasks login` again.',
+  });
+}
 
 /**
  * Shared HTML reply builder — same headers on every branch so the cache
