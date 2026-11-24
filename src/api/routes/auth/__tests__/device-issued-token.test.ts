@@ -469,6 +469,15 @@ describe('device sign-in: issued token', () => {
       const dump = JSON.stringify(rows);
       expect(dump).not.toContain(token);
       expect(dump).not.toContain(hashToken(token));
+      // No fragment either: no 6-character run of the token's random part
+      // or of its hash appears anywhere in the trail.
+      const secretPart = token.slice('wft_pat_'.length);
+      const hash = hashToken(token);
+      for (const s of [secretPart, hash]) {
+        for (let i = 0; i + 6 <= s.length; i++) {
+          expect(dump).not.toContain(s.slice(i, i + 6));
+        }
+      }
     });
 
     it('records no issuance when nothing is issued (Deny, refused second submission)', async () => {
@@ -625,6 +634,66 @@ describe('device sign-in: issued token', () => {
       expect(rows).toHaveLength(1);
       expect(rows[0]?.revoked_at).toBeNull();
       expect(findByDeviceCode(device_code)?.mintedToken).toBe(tokenA);
+    });
+
+    it('after a failed issue the same approver can retry; another user cannot', async () => {
+      const { device_code, user_code } = await startSignIn(h.app, 'laptop');
+      const repo = h.app.apiTokenRepository;
+      const spy = vi.spyOn(repo, 'insert').mockImplementationOnce(() => {
+        throw new Error('database busy');
+      });
+      expect((await approveAs(h.app, h.userA, user_code)).statusCode).toBe(500);
+      spy.mockRestore();
+      expect(findByDeviceCode(device_code)?.status).toBe('approved');
+      expect(findByDeviceCode(device_code)?.mintedToken).toBeNull();
+      expect(tokenRows(h.db)).toHaveLength(0);
+
+      expect((await approveAs(h.app, h.userB, user_code)).statusCode).toBe(400);
+      expect(tokenRows(h.db)).toHaveLength(0);
+
+      expect((await approveAs(h.app, h.userA, user_code)).statusCode).toBe(200);
+      const rows = tokenRows(h.db);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.user_id).toBe(h.userA);
+      const delivered = await poll(h.app, device_code);
+      expect(delivered.statusCode).toBe(200);
+      expect(delivered.json['token_id']).toBe(rows[0]?.id);
+    });
+
+    it('concurrent approvals of one code by two users issue exactly one token', async () => {
+      const { device_code, user_code } = await startSignIn(h.app, 'laptop');
+      const pages = await Promise.all(
+        [h.userA, h.userB].map(async (u) => {
+          const cookie = await signIn(h.app, u);
+          return openApprovalPage(h.app, cookie, user_code);
+        }),
+      );
+      const results = await Promise.all(
+        pages.map((p) =>
+          postVerify(h.app, p.cookie, { ...hiddenFields(p.body), user_code, action: 'approve' }),
+        ),
+      );
+      const codes = results.map((r) => r.statusCode).sort();
+      expect(codes).toEqual([200, 400]);
+      const rows = tokenRows(h.db);
+      expect(rows).toHaveLength(1);
+      const session = findByDeviceCode(device_code);
+      expect(rows[0]?.user_id).toBe(session?.approvedUserId);
+      expect(rows[0]?.id).toBe(session?.mintedTokenId);
+    });
+
+    it('concurrent approvals of one code by the same user issue exactly one token', async () => {
+      const { user_code } = await startSignIn(h.app, 'laptop');
+      const cookie = await signIn(h.app, h.userA);
+      const page = await openApprovalPage(h.app, cookie, user_code);
+      const fields = { ...hiddenFields(page.body), user_code, action: 'approve' };
+      const results = await Promise.all([
+        postVerify(h.app, page.cookie, fields),
+        postVerify(h.app, page.cookie, fields),
+        postVerify(h.app, page.cookie, fields),
+      ]);
+      expect(results.every((r) => r.statusCode === 200)).toBe(true);
+      expect(tokenRows(h.db)).toHaveLength(1);
     });
   });
 });

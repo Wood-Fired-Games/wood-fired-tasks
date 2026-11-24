@@ -40,7 +40,7 @@ describe('ownerOnlyAclArgs', () => {
     ]);
   });
 
-  it('passes a path with spaces as one argument (no shell quoting involved)', () => {
+  it('keeps a path with spaces as one argument', () => {
     const args = ownerOnlyAclArgs('C:\\Users\\A B\\cred file', 'A B');
     expect(args[0]).toBe('C:\\Users\\A B\\cred file');
     expect(args[3]).toBe('A B:F');
@@ -225,6 +225,37 @@ describe('writeCredentials on Windows (simulated)', () => {
     expect(() => writeCredentials(CREDS, target)).toThrow(/disk full/);
     expect(existsSync(target)).toBe(false);
     expect(readdirSync(dir)).toEqual([]);
+  });
+
+  it('runs every command without a shell, by absolute path, with an argument array', async () => {
+    const shellApis = {
+      exec: vi.fn(),
+      execSync: vi.fn(),
+      spawn: vi.fn(),
+      spawnSync: vi.fn(),
+    };
+    const exec = fakeExec(() => {});
+    vi.resetModules();
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    vi.doMock('node:child_process', async (importOriginal) => ({
+      ...(await importOriginal<typeof import('node:child_process')>()),
+      ...shellApis,
+      execFileSync: exec,
+    }));
+    const { writeCredentials } = await import('../credentials.js');
+    writeCredentials(CREDS, path.join(dir, 'credentials'));
+
+    expect(exec.mock.calls.length).toBeGreaterThanOrEqual(2);
+    for (const [cmd, args, opts] of exec.mock.calls as unknown as [
+      string,
+      unknown,
+      { shell?: unknown } | undefined,
+    ][]) {
+      expect(path.win32.isAbsolute(cmd)).toBe(true);
+      expect(Array.isArray(args)).toBe(true);
+      expect(opts?.shell).toBeFalsy();
+    }
+    for (const fn of Object.values(shellApis)) expect(fn).not.toHaveBeenCalled();
   });
 });
 

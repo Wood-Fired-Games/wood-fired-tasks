@@ -122,13 +122,19 @@ const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fasti
     // session.csrf entry on first visit so the subsequent POST has
     // something to validate against.
     const csrfToken = getOrCreateCsrfToken(request);
-    // Name the machine that started the sign-in, when the code belongs to a
-    // pending, unexpired session.
-    const pending = safeUserCode !== null ? findByUserCode(safeUserCode) : undefined;
-    const requestingMachine =
-      pending !== undefined && pending.status === 'pending' && Date.now() <= pending.expiresAt
-        ? pending.hostname
-        : null;
+    // Name the machine that started the sign-in, when the code belongs to an
+    // unexpired session this user may approve: a pending one, or one this
+    // user approved whose token could not be issued.
+    const found = safeUserCode !== null ? findByUserCode(safeUserCode) : undefined;
+    const viewerId = getSessionUserId(request);
+    const approvable =
+      found !== undefined &&
+      Date.now() <= found.expiresAt &&
+      (found.status === 'pending' ||
+        (found.status === 'approved' &&
+          found.approvedUserId === viewerId &&
+          found.mintedToken === null));
+    const requestingMachine = approvable ? found.hostname : null;
     const html = renderDevicePage({
       csrfToken,
       prefilledUserCode: safeUserCode,
