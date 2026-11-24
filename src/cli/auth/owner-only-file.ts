@@ -5,8 +5,8 @@
  * list, so on Windows the credentials file is limited to the current
  * account with `icacls` (run by absolute path): inherited entries are
  * removed and the account alone is granted full control. The account is
- * the SID the OS reports for the current user (`whoami /user`), never a
- * value read from the environment. Commands run through `execFileSync` with
+ * the SID the OS reports for the current user (`whoami /user`). Commands
+ * run through `execFileSync` with
  * an argument array — no shell is involved, so a path with spaces or shell
  * metacharacters is passed through verbatim.
  */
@@ -33,8 +33,7 @@ export function icaclsPath(): string {
 
 /**
  * `icacls` arguments that leave `filePath` accessible to `account` only.
- * The path is resolved to a full Windows path first, so it can never begin
- * with `/` (which icacls would read as a switch).
+ * The path is passed as a full Windows path (drive or `\` first).
  */
 export function ownerOnlyAclArgs(
   filePath: string,

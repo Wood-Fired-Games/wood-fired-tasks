@@ -50,7 +50,7 @@ describe('ownerOnlyAclArgs', () => {
     expect(() => ownerOnlyAclArgs('C:\\x', '')).toThrow(/account/);
   });
 
-  it('never passes a path that icacls could read as a switch', () => {
+  it('passes the target as a full Windows path', () => {
     for (const p of ['/tmp/credentials', '/inheritance:r', 'relative\\creds']) {
       const target = ownerOnlyAclArgs(p, 'HOST\\a')[0] as string;
       expect(target.startsWith('/')).toBe(false);
@@ -95,7 +95,7 @@ describe('windowsAccountName', () => {
     else process.env['USERDOMAIN'] = savedDomain;
   });
 
-  it('uses the SID the OS reports for the current user, not the environment', () => {
+  it('grants to the SID that whoami reports, whatever USERNAME and USERDOMAIN say', () => {
     process.env['USERNAME'] = 'someone-else';
     process.env['USERDOMAIN'] = 'ELSEWHERE';
     const name = windowsAccountName(
@@ -105,7 +105,7 @@ describe('windowsAccountName', () => {
     expect(name).toBe('*S-1-5-21-111-222-333-1001');
   });
 
-  it('falls back to the OS user name when whoami gives no SID, still ignoring the environment', () => {
+  it('uses the OS user name when whoami gives no SID', () => {
     process.env['USERNAME'] = 'someone-else';
     const failing = (): string => {
       throw new Error('whoami unavailable');

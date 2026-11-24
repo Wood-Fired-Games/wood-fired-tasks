@@ -254,7 +254,7 @@ describe('device sign-in: issued token', () => {
       expect(expiresMs).toBeLessThanOrEqual(after + 90 * DAY_MS);
     });
 
-    it('the issued token satisfies read and write and not admin', async () => {
+    it('the issued token satisfies the read and write tiers only', async () => {
       const { user_code } = await startSignIn(h.app, 'laptop');
       expect((await approveAs(h.app, h.userA, user_code)).statusCode).toBe(200);
 
@@ -699,7 +699,7 @@ describe('device sign-in: issued token', () => {
   });
 
   describe('one approver, one token per session', () => {
-    it('two users: the CLI receives the approving user’s token and a later submission is answered with 400', async () => {
+    it('two users: the CLI receives the token of the user who approved', async () => {
       // User A's CLI starts a sign-in and user A approves it.
       const { device_code, user_code } = await startSignIn(h.app, 'laptop-a');
       const first = await approveAs(h.app, h.userA, user_code);
@@ -757,7 +757,7 @@ describe('device sign-in: issued token', () => {
       expect(findByDeviceCode(device_code)?.mintedToken).toBe(tokenA);
     });
 
-    it('after a failed issue the same approver can retry; another user cannot', async () => {
+    it('after a failed issue the approving user can approve again', async () => {
       const { device_code, user_code } = await startSignIn(h.app, 'laptop');
       const repo = h.app.apiTokenRepository;
       const spy = vi.spyOn(repo, 'insert').mockImplementationOnce(() => {
