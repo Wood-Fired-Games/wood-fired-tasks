@@ -386,6 +386,40 @@ describe('device sign-in: issued token', () => {
     });
   });
 
+  describe('accepted actions', () => {
+    it.each([
+      ['missing (a form submitted without a button)', undefined],
+      ['empty', ''],
+      ['another word', 'yes'],
+      ['different case', 'APPROVE'],
+      ['padded', ' approve'],
+    ])('action %s is refused and approves nothing', async (_label, action) => {
+      const { device_code, user_code } = await startSignIn(h.app, 'laptop');
+      const cookie = await signIn(h.app, h.userA);
+      const page = await openApprovalPage(h.app, cookie, user_code);
+      const fields: Record<string, string> = { ...hiddenFields(page.body), user_code };
+      if (action !== undefined) fields['action'] = action;
+      const r = await postVerify(h.app, page.cookie, fields);
+      expect(r.statusCode).toBe(400);
+      expect(findByDeviceCode(device_code)?.status).toBe('pending');
+      expect(tokenRows(h.db)).toHaveLength(0);
+    });
+
+    it('continue with a confirmed code shows the page again and approves nothing', async () => {
+      const { device_code, user_code } = await startSignIn(h.app, 'laptop');
+      const cookie = await signIn(h.app, h.userA);
+      const page = await openApprovalPage(h.app, cookie, user_code);
+      const r = await postVerify(h.app, page.cookie, {
+        ...hiddenFields(page.body),
+        user_code,
+        action: 'continue',
+      });
+      expect(r.statusCode).toBe(200);
+      expect(findByDeviceCode(device_code)?.status).toBe('pending');
+      expect(tokenRows(h.db)).toHaveLength(0);
+    });
+  });
+
   describe('audit trail', () => {
     const ISSUED = 'device_sign_in.token_issued';
 

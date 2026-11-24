@@ -225,7 +225,17 @@ const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fasti
       //    refused.
       const user = requireUser(request);
 
+      // Only the three form actions are accepted, exactly as the buttons send
+      // them; anything else (including no action at all) is refused.
       const action = body.action;
+      if (action !== 'approve' && action !== 'deny' && action !== 'continue') {
+        const html = renderDevicePage({
+          csrfToken: getOrCreateCsrfToken(request),
+          prefilledUserCode: null,
+          errorMessage: 'Choose Approve or Deny.',
+        });
+        return replyHtml(reply, 400, html);
+      }
 
       // Deny: only a pending session can be denied. Terminal — the CLI sees
       // access_denied on its next poll and no token is issued.
