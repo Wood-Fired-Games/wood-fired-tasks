@@ -22,7 +22,7 @@ These options work with any command:
 |--------|-------------|
 | --json | Output in machine-readable JSON format (writes to stdout, errors to stderr) |
 | --no-input | Disable interactive prompts (fail if required options are missing) |
-| --force | Skip confirmation prompts for destructive operations |
+| --force | Skip confirmation prompts for destructive operations. It never forces an archive: that is `tasks project-archive <id> --with-unfinished`, which requires `--reason <text>` (archive details: [API.md](API.md#post-apiv1projectsidarchive)). |
 
 **Examples:**
 
@@ -452,7 +452,7 @@ tasks project-create \
 
 ### tasks project-list
 
-List all projects.
+List projects. Archived projects are hidden unless `--include-archived` (or `--archived-only`) is given.
 
 **Example:**
 
@@ -1890,6 +1890,7 @@ This command does not honor `--json` — it always emits the raw shell script on
 |------|---------|
 | 0 | Success |
 | 1 | Error (validation, API error, connection error) |
+| 0 | `tasks project-unarchive <id>` when some tasks failed re-evaluation: a warning on stderr names them, not under `--json` ([API.md](API.md#post-apiv1projectsidunarchive)) |
 
 ## Tips
 

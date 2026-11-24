@@ -94,6 +94,7 @@ The API uses standard HTTP status codes and returns error details in JSON format
 | 403 | Forbidden (PAT lacks the route's required scope, or is bound to a different project) |
 | 404 | Not Found |
 | 409 | Conflict (claim already taken, invalid state transition) |
+| 422 | Business rule violation (`BUSINESS_RULE_VIOLATION`), e.g. a write into an archived project |
 | 500 | Internal Server Error |
 
 ### Error Response Format
@@ -119,6 +120,29 @@ For validation errors (400), the API uses Zod schemas and returns detailed error
       "message": "Title is required"
     }
   ]
+}
+```
+
+### Business rule violations (422)
+
+A request that is valid but breaks a rule is answered `422` with
+`error: "BUSINESS_RULE_VIOLATION"`. The message opens with a stable code where
+there is one, and some refusals also carry `details`:
+
+| Message opens with | When | `details` |
+|--------------------|------|-----------|
+| `project_archived:` | Any write into an archived project (see [Archived projects](#archived-projects)) | — |
+| `project_has_unfinished_tasks:` | Archiving a project that still has unfinished tasks, without `force` | `{ code, total, counts: { open, in_progress, blocked, backlogged } }` |
+
+```json
+{
+  "error": "BUSINESS_RULE_VIOLATION",
+  "message": "project_has_unfinished_tasks: project 7 has 3 unfinished tasks (open: 2, in_progress: 0, blocked: 1, backlogged: 0); finish or close them, or archive with force: true and a reason",
+  "details": {
+    "code": "project_has_unfinished_tasks",
+    "total": 3,
+    "counts": { "open": 2, "in_progress": 0, "blocked": 1, "backlogged": 0 }
+  }
 }
 ```
 
@@ -208,6 +232,8 @@ Field semantics:
 
 | Field | Values | Meaning |
 |-------|--------|---------|
+| `database.projects` | number | Every project, archived ones included (an upgrade fingerprint to compare across a deploy). |
+| `database.archived_projects` | number | How many of those projects are archived. |
 | `checks.database` | `ok` \| `failed` | `SELECT 1` against the SQLite database succeeded or threw. |
 | `checks.eventBus` | `ok` \| `degraded` \| `unknown` | In-process event bus liveness. |
 | `checks.sseManager` | `ok` \| `degraded` \| `unknown` | SSE fan-out manager liveness. |
@@ -279,6 +305,7 @@ List projects (paginated). Returns the envelope `{ data, total, limit, offset }`
 |-----------|------|-------------|
 | limit | number | Page size, default 50, max 500 |
 | offset | number | Pagination offset, default 0 |
+| archived | string | `exclude` (default: archived projects are omitted), `include` or `only`. `total` counts the filtered set. |
 
 **Response:** 200 OK
 
@@ -385,6 +412,107 @@ Delete a project.
 
 ```bash
 curl -X DELETE http://localhost:3000/api/v1/projects/1 \
+  -H "Authorization: Bearer wft_pat_your-token"
+```
+
+### Archived projects
+
+A finished project can be **archived** instead of deleted, and unarchived at
+any time. Design of record:
+[project-archived-state.md](design/project-archived-state.md).
+
+- **Fields.** Every project response carries `archived` (boolean),
+  `archived_at` (ISO timestamp), `archived_by` (the caller who archived it,
+  never taken from the request body) and `archive_reason`; the last three are
+  `null` on a project that is not archived.
+- **Read-only.** Creating, updating, claiming or deleting a task, adding or
+  removing a dependency where either task is in an archived project,
+  `POST /projects/:id/rescore`, WSJF score writes and `PUT /projects/:id` are
+  all refused with `422` and a message opening `project_archived:`. Reads by
+  id keep working, comments can still be added, and the project can still be
+  deleted.
+- **Listings.** `GET /projects` and `GET /tasks` (without `project_id`) omit
+  archived projects unless `archived=include` or `archived=only`.
+  `GET /tasks?project_id=N` returns an archived project's tasks.
+  `GET /tasks/completion-report` counts archived projects' tasks.
+- **Events.** `project.archived` and `project.unarchived` (with the full
+  project) on the [event stream](#get-apiv1events); `project.updated` is not
+  sent for either.
+- **Scope.** Both routes need the `write` scope; a token bound to a project
+  may archive or unarchive only that project.
+
+### POST /api/v1/projects/:id/archive
+
+Archive a project. Archiving an already archived project returns it unchanged
+(200, no event): the first archive's time, actor and reason are kept.
+
+**Request Body (optional):**
+
+```json
+{
+  "reason": "string (optional, 1-500 chars after trimming; required with force)",
+  "force": "boolean (optional)"
+}
+```
+
+While any task is `open`, `in_progress`, `blocked` or `backlogged`, the archive
+is refused unless `force: true` is sent with a `reason`. A forced archive does
+not change any task's status.
+
+**Responses:**
+
+| Status | When |
+|--------|------|
+| 200 | Archived (or already archived); body is the project |
+| 400 | Invalid id or body; `force: true` without a `reason` (the message contains `archive_reason_required`); a whitespace-only `reason` |
+| 403 | The token lacks `write`, or is bound to a different project |
+| 404 | No project with this id |
+| 422 | `project_has_unfinished_tasks`, with the counts in `details` (see [Business rule violations](#business-rule-violations-422)) |
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:3000/api/v1/projects/7/archive \
+  -H "Authorization: Bearer wft_pat_your-token" \
+  -H "Content-Type: application/json" \
+  -d '{"force": true, "reason": "Superseded by project 9"}'
+```
+
+### POST /api/v1/projects/:id/unarchive
+
+Return an archived project to normal use. No request body.
+
+**Response:** 200 OK: the project (with `archived: false` and the three
+archive fields `null`) plus `"reevaluation_failed_task_ids": []`.
+
+While a project is archived the workflow cascade skips its tasks, so the
+unarchive then re-evaluates it once: `blocked` tasks whose blockers are all
+`done` become `open`, and open parents whose children are all `done` are
+completed (`source: "workflow"`, usual events). Each task is re-evaluated on
+its own; `reevaluation_failed_task_ids` names those that kept their old state
+(empty on a clean pass). A response **without** the field (an older server)
+means "unknown", not "nothing failed".
+
+Unarchiving a project that is not archived returns it unchanged, sends no
+event and does **not** re-run the pass: it only retries tasks that failed
+earlier **in this server process**, or finishes a pass that a thrown candidate
+query left unfinished. That throw answers the first unarchive with a 5xx
+although the unarchive has committed; the next unarchive finishes the pass.
+After a restart nothing is remembered; archive and unarchive again instead.
+Project names stay unique while archived. Full rules:
+[design §2.4](design/project-archived-state.md#24-unarchive).
+
+| Status | When |
+|--------|------|
+| 200 | Unarchived (or not archived) |
+| 400 | Invalid id |
+| 403 | The token lacks `write`, or is bound to a different project |
+| 404 | No project with this id |
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:3000/api/v1/projects/7/unarchive \
   -H "Authorization: Bearer wft_pat_your-token"
 ```
 
@@ -527,6 +655,7 @@ List tasks with optional filters (paginated). Returns the envelope `{ data, tota
 | updated_before | string | Tasks last updated before date (ISO8601) |
 | updated_after | string | Tasks last updated after date (ISO8601) |
 | search | string | Search in title and description (max 200 chars, max 32 terms) |
+| archived | string | Without `project_id`: `exclude` (default: tasks of archived projects are omitted), `include` or `only`. With `project_id` the project's tasks are returned whether it is archived or not. |
 | limit | number | Page size, default 50, max 500 |
 | offset | number | Pagination offset, default 0 |
 
@@ -1449,6 +1578,8 @@ Subscribe to real-time task and project change notifications via Server-Sent Eve
 | project.created | New project created |
 | project.updated | Project modified |
 | project.deleted | Project deleted |
+| project.archived | Project archived (not sent for a repeat archive); `data` is the full project |
+| project.unarchived | Project unarchived (not sent for a repeat unarchive); `data` is the full project |
 
 **Event Format:**
 

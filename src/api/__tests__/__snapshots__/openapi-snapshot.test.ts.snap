@@ -5279,7 +5279,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
               "application/json": {
                 "schema": {
                   "additionalProperties": false,
-                  "description": "Invalid id or body; \`force: true\` without a \`reason\` opens its message with \`archive_reason_required\`.",
+                  "description": "Invalid id or body; \`force: true\` without a \`reason\` has a message that contains \`archive_reason_required\`.",
                   "properties": {
                     "details": {},
                     "error": {
@@ -5297,7 +5297,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                 },
               },
             },
-            "description": "Invalid id or body; \`force: true\` without a \`reason\` opens its message with \`archive_reason_required\`.",
+            "description": "Invalid id or body; \`force: true\` without a \`reason\` has a message that contains \`archive_reason_required\`.",
           },
           "404": {
             "content": {
@@ -6628,7 +6628,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
     },
     "/api/v1/projects/{id}/unarchive": {
       "post": {
-        "description": "Unarchive a project. Unarchiving a project that is not archived returns it unchanged. Either way the project is then re-evaluated; \`reevaluation_failed_task_ids\` names the tasks whose re-evaluation rolled back (empty on a clean pass), and unarchiving again retries them.",
+        "description": "Unarchive a project; the project is then re-evaluated once. Unarchiving a project that is not archived returns it unchanged and does not run the re-evaluation again: it only retries tasks whose re-evaluation failed earlier in this server process, or finishes a pass that an earlier error left unfinished. Nothing is remembered across a restart. \`reevaluation_failed_task_ids\` names the tasks whose re-evaluation rolled back (empty on a clean pass).",
         "parameters": [
           {
             "in": "path",

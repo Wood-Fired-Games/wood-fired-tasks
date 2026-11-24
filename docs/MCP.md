@@ -164,7 +164,7 @@ codex mcp add wood-fired-tasks \
 **Restart Codex after adding the server.** Codex enumerates MCP servers at
 startup, so a freshly added `wood-fired-tasks` entry does **not** appear in an
 already-running session. Quit and relaunch Codex (or start a new session); the
-27 `wood-fired-tasks` tools show up once it reconnects. Verify with
+33 `wood-fired-tasks` tools show up once it reconnects. Verify with
 `codex mcp list`.
 
 ### Automatic Installation
@@ -361,7 +361,7 @@ for attribution and easy revocation.
 | Data access | In-process via `better-sqlite3` against `DB_PATH` | HTTPS/HTTP calls to the deployed REST API |
 | Required env | `DB_PATH` (optional, defaults to `./data/tasks.db`) | `WFT_API_URL` + `WFT_API_KEY` (both required, no defaults) |
 | Auth surface | None (filesystem-trusted) | API key on every call |
-| Tool count | 27 (full set including `completion_report`, `topology_check`, `wait_for_unblock`, and the four WSJF tools) | 27 (full parity: `completion_report` proxies `GET /api/v1/tasks/completion-report`, `topology_check` proxies `GET /api/v1/projects/:id/topology`, `wait_for_unblock` resolves over the SSE stream `GET /api/v1/events`, and `wsjf_ranking` / `wsjf_history` / `wsjf_health` / `rescore_project` proxy the project- and task-scoped WSJF REST endpoints) |
+| Tool count | 33 (full set including `completion_report`, `topology_check`, `wait_for_unblock`, the four WSJF tools, the four Model tools, and `archive_project` / `unarchive_project`) | 33 (full parity: `completion_report` proxies `GET /api/v1/tasks/completion-report`, `topology_check` proxies `GET /api/v1/projects/:id/topology`, `wait_for_unblock` resolves over the SSE stream `GET /api/v1/events`, and `wsjf_ranking` / `wsjf_history` / `wsjf_health` / `rescore_project` proxy the project- and task-scoped WSJF REST endpoints) |
 | `events://stream` resource | Served, points at `API_URL` (default `http://localhost:3000/api/v1`) | Served, points at `WFT_API_URL/api/v1` |
 
 The remote server carries every tool the local server does. `completion_report` calls reach the deployed REST API (`GET /api/v1/tasks/completion-report`) which runs `TaskService.getCompletionReport` server-side and returns the same envelope the local in-process tool produces. `topology_check` is registered on the remote server too (`src/mcp/remote/register-tools.ts`), proxying `GET /api/v1/projects/:id/topology` (`TopologyService.classify`) instead of constructing the service in-process. The four WSJF tools (`wsjf_ranking`, `wsjf_history`, `wsjf_health`, `rescore_project`) reach remote parity the same way (WSJF 1.10): the remote proxy calls `GET /api/v1/projects/:id/wsjf-ranking`, `GET /api/v1/tasks/:id/score-history`, `GET /api/v1/projects/:id/wsjf-health`, and `POST /api/v1/projects/:id/rescore`, each of which exposes the same service the stdio server wires in-process (`rankFrontier`, `WsjfHistoryRepository`, `WsjfHealthService`, `WsjfRescoreService`). `wait_for_unblock` is hosted on **both** servers but over **different transports**: the local variant resolves the `blocked -> open` transition off the **in-process EventBus**, while the remote variant (task #481) resolves it off the **SSE event stream** (`GET /api/v1/events`, `RestClient.waitForUnblockViaSse`) — so the remote tool additionally observes cross-process / cross-session transitions. The input schema and the three return envelopes (`already_unblocked` / `unblocked` / `timeout`) are byte-identical across both transports.
@@ -548,13 +548,16 @@ List tasks with optional filters and pagination. Returns a compact task projecti
   "updated_before": "string (optional, ISO8601)",
   "updated_after": "string (optional, ISO8601)",
   "search": "string (optional, max 200 chars)",
+  "archived": "\"exclude\" | \"include\" | \"only\" (optional, default \"exclude\")",
   "limit": "number (optional, 1-500, default 50)",
   "offset": "number (optional, >=0, default 0)",
   "verbose": "boolean (optional, default false)"
 }
 ```
 
-**Returns:** `{ tasks, total, limit, offset }`.
+**Returns:** `{ tasks, total, limit, offset }`. Tasks of archived projects are
+omitted unless `archived` is `include` or `only`; an explicit `project_id`
+always returns that project's tasks, archived or not.
 
 **Usage:** When Claude Code needs to find tasks, filter by criteria, or search for specific work items.
 
@@ -775,7 +778,10 @@ identity, never an argument.
 **Usage:** When a project's work is finished. Refused with
 `project_has_unfinished_tasks:` while any task is `open`, `in_progress`,
 `blocked` or `backlogged`, unless `force: true` is given with a `reason`.
-Archiving an already archived project returns it unchanged.
+`force` without a `reason` is an `InvalidParams` error (-32602) whose message
+contains `archive_reason_required`, on stdio and remote alike. A forced archive
+does not change any task's status. Archiving an already archived project
+returns it unchanged.
 
 #### unarchive_project
 
@@ -796,7 +802,16 @@ that is not archived returns it unchanged.
 **Result:** the project plus `reevaluation_failed_task_ids`, the tasks whose
 re-evaluation rolled back and kept their old state (empty on a clean pass); the
 text then carries a warning line naming them. Call `unarchive_project` again to
-retry them.
+retry them. That repeat call does not re-run the whole re-evaluation: it only
+retries the tasks that failed earlier in the same server process (or finishes
+a pass an earlier thrown query left unfinished; see
+[design §2.4](design/project-archived-state.md#24-unarchive)), so after a
+server restart it retries nothing and reports nothing. The way out then is to
+archive the project again (`force` and a `reason` if it has unfinished tasks)
+and unarchive it. If a remote server is older than this client and its
+response has no `reevaluation_failed_task_ids`, the text adds a note that the
+server did not report the result: treat that as unknown, not as "nothing
+failed".
 
 #### delete_project
 
@@ -1192,6 +1207,8 @@ The resource description and the server's emitted events MUST stay in sync. The 
 | `project.created` | New project created |
 | `project.updated` | Project updated |
 | `project.deleted` | Project deleted |
+| `project.archived` | Project archived (not sent for a repeat archive) |
+| `project.unarchived` | Project unarchived (not sent for a repeat unarchive) |
 | `ping` | SSE heartbeat (every 30 seconds — not in `ALLOWED_EVENT_TYPES`, transport-level only) |
 
 If you add or rename a domain event, update `ALLOWED_EVENT_TYPES` in `src/events/types.ts`, the table in `src/mcp/resources/events.ts`, and this table together. The `events-resource` MCP test (`src/mcp/__tests__/events-resource.test.ts`) is the canonical regression guard.

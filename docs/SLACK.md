@@ -225,6 +225,19 @@ the actor on the unarchive) is the mapped tracker user's display name,
 not the Slack display name. See
 [design §2.6](design/project-archived-state.md#26-who-may-archive).
 
+Everything after the id in `/tasks project-archive <id> [reason]` is the
+reason, taken as written; there are no flags. **There is no force from
+Slack:** a project that still has `open`, `in_progress`, `blocked` or
+`backlogged` tasks is refused and the refusal (with the count per status) is
+shown. To archive such a project, use the CLI (`tasks project-archive <id>
+--with-unfinished --reason <text>`), REST or MCP.
+
+`/tasks project-unarchive <id>` re-evaluates the project the same way the
+other surfaces do. If some tasks could not be re-evaluated, the reply adds a
+:warning: block naming them; running the command again retries them, as long
+as the server has not restarted since (see
+[design §2.4](design/project-archived-state.md#24-unarchive)).
+
 ## Notifier behaviour
 
 The `SlackNotifier` ([`src/slack/notifier.ts`](../src/slack/notifier.ts))

@@ -94,6 +94,26 @@ REST API. Remote MCP (`src/mcp/remote/`) is the same pattern. Local MCP
    `ON DELETE CASCADE`, so deleting a project removes its tasks.
 3. Emits `project.created`, `project.updated`, `project.deleted`.
 
+### Project archive / unarchive
+
+1. `ProjectService.archiveProject` refuses (422 `project_has_unfinished_tasks`,
+   counts in `details`) while any task is `open`, `in_progress`, `blocked` or
+   `backlogged`, unless `force: true` with a `reason`. The actor
+   (`archived_by`) is the authenticated caller. A repeat archive is a no-op.
+2. `ProjectRepository.archive` / `unarchive` set or clear `archived_at`,
+   `archived_by`, `archive_reason` (migration 021). Emits `project.archived`
+   / `project.unarchived` once per real transition, never `project.updated`.
+3. While archived, `assertProjectWritable` (`src/services/project-write-guard.ts`)
+   makes `TaskService` and `DependencyService` refuse writes with 422
+   `project_archived`; `WsjfRescoreService` and `ProjectService.updateProject`
+   throw the same error (`projectArchivedError`) themselves. Comments and project deletion stay allowed. The `WorkflowEngine`
+   cascade skips targets in an archived project instead of failing.
+4. After an unarchive commits, `ProjectService.unarchiveProject` calls
+   `WorkflowEngine.reevaluateProject` directly (one transaction per task);
+   a repeat unarchive calls `retryFailedTasks`, which retries only the ids
+   remembered in memory, or runs the full pass if the last one was left
+   unfinished by a thrown candidate query. Rules: [design §2.4](design/project-archived-state.md#24-unarchive).
+
 ### WSJF scoring / ranking
 
 WSJF (Weighted Shortest Job First) layers economic prioritization onto the
@@ -199,7 +219,7 @@ were back-filled with `updated_at` as best-available approximation.
 
 Event bus type: `src/events/event-bus.ts` (singleton). Emitted types:
 `task.created/updated/deleted/status_changed/claimed/claim_released`,
-`project.created/updated/deleted` (runtime list: `ALLOWED_EVENT_TYPES`
+`project.created/updated/deleted/archived/unarchived` (runtime list: `ALLOWED_EVENT_TYPES`
 in `src/events/types.ts`). Emitted by
 services after a successful repository write. Consumers:
 
@@ -207,7 +227,9 @@ services after a successful repository write. Consumers:
   `ignoreTransaction: true`; cascades parent auto-complete + dependency
   auto-unblock, max depth 5, wrapped in a SQLite transaction so failures
   roll back. `runInTransaction` buffers external subscriber emits so no
-  phantom events leak on rollback.
+  phantom events leak on rollback. It also listens to `task.deleted` and
+  `project.archived` only to forget remembered unarchive re-evaluation
+  failures; the re-evaluation itself is a direct call, not an event handler.
 - `SSEManager` — `GET /api/v1/events` for authenticated SSE clients; per-key
   (4), per-IP (8), and global (200) caps (env-tunable).
 - `SlackNotifier` — task event types only; filters by
@@ -230,7 +252,7 @@ WAL mode is enabled by `src/db/database.ts`:
 
 | Table | Columns (one-liner) | Purpose |
 |---|---|---|
-| `projects` | `id`, `name UNIQUE`, `description`, `value_charter` (JSON, migration 014), timestamps | Top-level grouping. `value_charter` is the per-project WSJF reference frame (nullable). |
+| `projects` | `id`, `name UNIQUE`, `description`, `value_charter` (JSON, migration 014), `archived_at`/`archived_by`/`archive_reason` (nullable, migration 021), timestamps | Top-level grouping. `value_charter` is the per-project WSJF reference frame (nullable). A project is archived exactly when `archived_at` is not null; API responses add a derived `archived` boolean. |
 | `tasks` | `id`, `title`, `description`, `status`, `priority`, `project_id`, `parent_task_id`, `assignee`, `created_by`, `due_date`, `estimated_minutes`, `version`, `claimed_at`, `completed_at`, `wsjf_value`/`wsjf_time_criticality`/`wsjf_risk_opportunity`/`wsjf_job_size` (INTEGER, CHECK ∈ Fibonacci `{1,2,3,5,8,13}`, migration 013), `wsjf_evidence`/`wsjf_locked`/`wsjf_source`/`wsjf_classifications`/`wsjf_features` (JSON), timestamps | Core entity. `version` is the CAS counter for atomic claim. WSJF columns are all-four-or-none (enforced at the DTO boundary), all nullable. |
 | `task_tags` | `task_id`, `tag` (UNIQUE pair) | Side table; `GROUP_CONCAT`-joined on reads. |
 | `tasks_fts` | FTS5 virtual table over `(title, description)` | Full-text search; kept in sync by triggers. |
@@ -272,7 +294,11 @@ match count for the same filter set.
 - Filter fields on `GET /api/v1/tasks` (see `QueryTaskFiltersSchema`):
   `project_id`, `status`, `assignee`, `tags` (CSV in URL), `due_before`,
   `due_after`, `updated_before`, `updated_after`, `search` (FTS5, max
-  200 chars / 32 terms).
+  200 chars / 32 terms), `archived`.
+- `archived` (`exclude` default / `include` / `only`) on `GET /projects`,
+  `GET /tasks`, `list_projects` and `list_tasks`. On a task listing it
+  applies only without `project_id`: naming a project's id always returns
+  its tasks, archived or not.
 - MCP `list_tasks` adds a `verbose` flag (default off -> compact projection
   via `toCompactTask`) to bound tool-result token cost.
 

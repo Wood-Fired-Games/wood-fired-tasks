@@ -125,6 +125,9 @@ Current backup/restore-sensitive migrations:
 - **005-backlogged-status** — rebuilds the `tasks` table (rename-swap pattern). Rollback before a confirmed bug means restoring the SQLite file from the pre-deploy backup; the `down` migration is safe but rewrites the table a second time.
 - **007-completed-at** — backfills `completed_at` from `updated_at` for `status='done'` rows. The backfill is irreversible in the sense that the prior NULL state is lost, but the `down` migration drops the column entirely, so rollback restores schema parity.
 
+Other migration notes:
+- **021-project-archive** — neither forward-only nor backup-sensitive. `up` adds three nullable columns to `projects` (`archived_at`, `archived_by`, `archive_reason`) with no default: no table rewrite, no backfill, and no existing project becomes archived. `down` drops the three columns, which rewrites the small `projects` table and discards the archive state, so every archived project comes back unarchived after a rollback.
+
 ## Pre-Open-Source Launch Checklist
 
 This checklist is the gate that must be clean before the repo's first

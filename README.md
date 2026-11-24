@@ -499,9 +499,11 @@ example below works verbatim. Working from a clone instead? Use
 | Command | Description |
 |---------|-------------|
 | tasks project-create | Create a new project |
-| tasks project-list | List all projects |
+| tasks project-list | List projects (`--include-archived`, `--archived-only`) |
 | tasks project-show \<id\> | Show project details |
 | tasks project-update \<id\> | Update project |
+| tasks project-archive \<id\> | Archive a finished project (`--reason`; `--with-unfinished` needs `--reason`) |
+| tasks project-unarchive \<id\> | Return an archived project to normal use |
 | tasks project-delete \<id\> | Delete project |
 
 ### Dependency Commands
@@ -625,14 +627,16 @@ The MCP server exposes 33 tools and 1 resource for Claude Code integration — T
 | get_subtasks | Paginated subtasks for a parent task (alternative shape) |
 | completion_report | Dashboard of tasks completed in a window with per-project/assignee/priority aggregates |
 
-### Project Tools (5)
+### Project Tools (7)
 
 | Tool | Description |
 |------|-------------|
 | create_project | Create a new project |
 | get_project | Get a project by its ID |
-| list_projects | List all projects |
+| list_projects | List projects (archived ones hidden unless `archived` is `include` or `only`) |
 | update_project | Update an existing project |
+| archive_project | Archive a project: read-only and hidden from default lists (reversible) |
+| unarchive_project | Return an archived project to normal use |
 | delete_project | Delete a project by its ID |
 
 ### Comment Tools (3)
@@ -830,7 +834,7 @@ The canonical command table (focused tests, migrations, quality gate) lives in
 
 ### Database
 
-SQLite with the better-sqlite3 driver, WAL mode, and automatic forward migrations via an in-house runner (`src/db/migrate.ts`). The migration files in `src/db/migrations/` (20 as of this writing — count them directly, they're the source of truth) are the canonical, self-documenting schema history — from `001-initial-schema` (projects, tasks, FTS5) through the identity tables (`008`–`010`, OIDC/PAT), acceptance criteria + verification evidence (`011`–`012`), the WSJF columns, value charter, and append-only audit tables (`013`–`015`), the model-policy table (`016`), the pluggable-SCM project charter default (`017`), the hash-chained `audit_events` trail (`018`–`019`), and PAT project binding (`020`).
+SQLite with the better-sqlite3 driver, WAL mode, and automatic forward migrations via an in-house runner (`src/db/migrate.ts`). The migration files in `src/db/migrations/` (21 as of this writing — count them directly, they're the source of truth) are the canonical, self-documenting schema history — from `001-initial-schema` (projects, tasks, FTS5) through the identity tables (`008`–`010`, OIDC/PAT), acceptance criteria + verification evidence (`011`–`012`), the WSJF columns, value charter, and append-only audit tables (`013`–`015`), the model-policy table (`016`), the pluggable-SCM project charter default (`017`), the hash-chained `audit_events` trail (`018`–`019`), PAT project binding (`020`), and the archived project state (`021`).
 Read the files directly for exact DDL; [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) covers how they fit together.
 
 ### Testing

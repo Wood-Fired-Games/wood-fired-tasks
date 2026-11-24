@@ -422,6 +422,17 @@ acceptance criterion is a command that exits 0 or a grep with a stated result.
 | A23 | Docs and counts (3.12) | 90 | A15, A17, A19, A20, A21 | `vitest src/mcp/__tests__/tool-count-drift.test.ts scripts/agent-context` exits 0; `npm run agent-context:check` exits 0; `grep -c "project-archive" docs/CLI.md` ≥ 1. |
 | A24 | Full gate and 2.10.0 release prep | 90 | A07, A08, A09, A12, A18, A22, A23 | `npm run quality` exits 0; `node -p "require('./package.json').version"` prints `2.10.0`; `grep -c "^## \[2.10.0\]" CHANGELOG.md` = 1. |
 
+Added during the build, from verification of the wave pull requests (all done
+before A23):
+
+| ID | Task | Tracker |
+| --- | --- | --- |
+| A25 | Unarchive re-evaluates blocked tasks whose blockers all finished while the project was archived (2.4) | WFT #2522 |
+| A26 | Claim route declares 422, and does not replay a cached success for a project archived since | WFT #2523 |
+| A27 | Archive routes: audit row names the project, error responses declared, stable code and structured counts (2.2, 2.7) | WFT #2530 |
+| A28 | Slack archive and unarchive require a mapped tracker user (2.6) | WFT #2531 |
+| A29 | Unarchive re-evaluation isolated per task, with a retry path, and run for a stdio unarchive (2.4) | WFT #2532 |
+
 Dependency edges, blocker → blocked:
 
 ```

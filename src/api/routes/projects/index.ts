@@ -91,7 +91,7 @@ const projectRoutes: FastifyPluginAsyncZod = async (fastify) => {
         response: {
           200: ProjectResponseSchema,
           400: ErrorResponseSchema.describe(
-            'Invalid id or body; `force: true` without a `reason` opens its message with ' +
+            'Invalid id or body; `force: true` without a `reason` has a message that contains ' +
               '`archive_reason_required`.',
           ),
           404: ErrorResponseSchema.describe('No project with this id.'),
@@ -121,10 +121,12 @@ const projectRoutes: FastifyPluginAsyncZod = async (fastify) => {
       schema: {
         tags: ['projects'],
         description:
-          'Unarchive a project. Unarchiving a project that is not archived returns it unchanged. ' +
-          'Either way the project is then re-evaluated; `reevaluation_failed_task_ids` names the ' +
-          'tasks whose re-evaluation rolled back (empty on a clean pass), and unarchiving again ' +
-          'retries them.',
+          'Unarchive a project; the project is then re-evaluated once. Unarchiving a project ' +
+          'that is not archived returns it unchanged and does not run the re-evaluation again: ' +
+          'it only retries tasks whose re-evaluation failed earlier in this server process, or ' +
+          'finishes a pass that an earlier error left unfinished. Nothing is remembered across a ' +
+          'restart. `reevaluation_failed_task_ids` names the tasks whose re-evaluation rolled ' +
+          'back (empty on a clean pass).',
         params: z.object({ id: z.coerce.number().int().positive() }),
         response: {
           200: UnarchiveProjectResponseSchema,
