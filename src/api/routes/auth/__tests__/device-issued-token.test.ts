@@ -23,6 +23,7 @@ import { SESSION_LIFETIME_SECONDS } from '../../../../web/session-constants.js';
 import {
   _resetForTests as resetDeviceFlowStore,
   findByDeviceCode,
+  remove as removeDeviceSession,
 } from '../../../../services/device-flow-store.js';
 import { initDatabase } from '../../../../db/database.js';
 import { runMigrations } from '../../../../db/migrate.js';
@@ -43,6 +44,7 @@ interface Harness {
   app: FastifyInstance;
   db: Database.Database;
   auditEvents: AuditEventRepository;
+  logs: Record<string, unknown>[];
   userA: number;
   userB: number;
 }
@@ -55,8 +57,14 @@ async function buildHarness(): Promise<Harness> {
   const userA = (insertUser.get('user-a') as { id: number }).id;
   const userB = (insertUser.get('user-b') as { id: number }).id;
 
+  const logs: Record<string, unknown>[] = [];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const app: any = Fastify({ logger: false });
+  const app: any = Fastify({
+    logger: {
+      level: 'info',
+      stream: { write: (line: string) => logs.push(JSON.parse(line) as Record<string, unknown>) },
+    },
+  });
   app.decorate('userRepository', new UserRepository(db));
   app.decorate('apiTokenRepository', new ApiTokenRepository(db));
   const auditEvents = new AuditEventRepository(db);
@@ -96,7 +104,7 @@ async function buildHarness(): Promise<Harness> {
   await app.register(deviceHtmlRoute, { origin: ORIGIN });
   await app.ready();
 
-  return { app, db, auditEvents, userA, userB };
+  return { app, db, auditEvents, logs, userA, userB };
 }
 
 async function signIn(app: FastifyInstance, userId: number): Promise<string> {
@@ -488,15 +496,65 @@ describe('device sign-in: issued token', () => {
       expect(rows[0]?.actor_id).toBe(String(h.userA));
     });
 
-    it('a failed audit append does not undo the sign-in', async () => {
+    it('no token is delivered when the issuance cannot be recorded', async () => {
       const spy = vi.spyOn(h.auditEvents, 'append').mockImplementation(() => {
         throw new Error('audit store unavailable');
       });
       const { device_code, user_code } = await startSignIn(h.app, 'laptop');
-      expect((await approveAs(h.app, h.userA, user_code)).statusCode).toBe(200);
-      expect(spy).toHaveBeenCalled();
-      expect(findByDeviceCode(device_code)?.mintedToken).toMatch(/^wft_pat_/);
+      const r = await approveAs(h.app, h.userA, user_code);
       spy.mockRestore();
+
+      expect(r.statusCode).toBe(500);
+      expect(cheerio.load(r.body)('p.error').text()).toContain('Could not complete sign-in');
+      const rows = tokenRows(h.db);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.revoked_at).not.toBeNull();
+      expect(findByDeviceCode(device_code)?.mintedToken).toBeNull();
+      expect((await poll(h.app, device_code)).json['error']).toBe('authorization_pending');
+      const failure = h.logs.find((l) => l['msg'] === 'audit.append_failed');
+      expect(failure).toBeDefined();
+      expect(failure?.['level']).toBe(50);
+      expect(failure?.['tokenId']).toBe(rows[0]?.id);
+    });
+
+    it('a token withdrawn because it could not be handed to the session is recorded', async () => {
+      const { device_code, user_code } = await startSignIn(h.app, 'laptop');
+      // The session disappears between issuing the token and storing it.
+      const repo = h.app.apiTokenRepository;
+      const realInsert = repo.insert.bind(repo);
+      const spy = vi.spyOn(repo, 'insert').mockImplementation((input) => {
+        const row = realInsert(input);
+        removeDeviceSession(device_code);
+        return row;
+      });
+      const r = await approveAs(h.app, h.userA, user_code);
+      spy.mockRestore();
+
+      expect(r.statusCode).toBe(500);
+      const token = tokenRows(h.db)[0] as TokenRow;
+      expect(token.revoked_at).not.toBeNull();
+      const revoked = allRows().filter((e) => e.action === 'device_sign_in.token_revoked');
+      expect(revoked).toHaveLength(1);
+      expect(revoked[0]?.actor_id).toBe(String(h.userA));
+      expect(revoked[0]?.resource_type).toBe('api_tokens');
+      expect(revoked[0]?.resource_id).toBe(String(token.id));
+    });
+
+    it('a denial is recorded with the denying user', async () => {
+      const { user_code } = await startSignIn(h.app, 'laptop');
+      const cookie = await signIn(h.app, h.userB);
+      const page = await openApprovalPage(h.app, cookie, user_code);
+      const r = await postVerify(h.app, page.cookie, {
+        ...hiddenFields(page.body),
+        user_code,
+        action: 'deny',
+      });
+      expect(r.statusCode).toBe(200);
+      const denied = allRows().filter((e) => e.action === 'device_sign_in.denied');
+      expect(denied).toHaveLength(1);
+      expect(denied[0]?.actor_type).toBe('user');
+      expect(denied[0]?.actor_id).toBe(String(h.userB));
+      expect(JSON.stringify(denied)).not.toContain(user_code);
     });
 
     it('the approval route refuses to register without the audit repository', async () => {
