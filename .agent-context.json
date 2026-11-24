@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-11-24T20:45:50.662Z",
+    "generated_at": "2026-11-24T21:13:08.361Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -150,7 +150,7 @@
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 39000,
       "actual_lines": 1950,
-      "sha256": "3e3b7d56dc03f8fcf8476c1f6b81bd7a7b34074b84d7ae06f0d84e5095413618"
+      "sha256": "1bf99c116baba379b7f42e179a29eaab972a30853c311819062b13d4a32b0866"
     },
     {
       "path": "docs/SETUP.md",
