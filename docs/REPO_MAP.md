@@ -63,7 +63,7 @@ than duplicating them.
 ### `src/db/` — SQLite + migrations
 - `database.ts` — better-sqlite3 connection.
 - `migrate.ts` — in-house migration runner (`npm run migrate`).
-- `migrations/001-initial-schema.ts` … `017-scm-charter.ts` (WSJF added `013-wsjf-fields.ts`, `014-value-charter.ts`, `015-wsjf-audit.ts`; `016-model-policy.ts` added configurable task models; `017-scm-charter.ts` the SCM charter default).
+- `migrations/001-initial-schema.ts` … `021-project-archive.ts` (WSJF added `013-wsjf-fields.ts`, `014-value-charter.ts`, `015-wsjf-audit.ts`; `016-model-policy.ts` added configurable task models; `017-scm-charter.ts` the SCM charter default; `018`–`019` the hash-chained `audit_events` trail; `020` the PAT project binding; `021` archived project state).
 - Tests: `src/db/__tests__/` (includes migration tests).
 
 ### `src/repositories/` — SQL access layer

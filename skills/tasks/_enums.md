@@ -52,7 +52,7 @@ Notes:
 ## Canonical ARCHIVED_FILTERS
 
 The `archived` filter on `list_projects` and `list_tasks` (and the CLI's
-`--archived`). Source: [`src/types/task.ts`](../../src/types/task.ts)
+`--include-archived` and `--archived-only`). Source: [`src/types/task.ts`](../../src/types/task.ts)
 (`ARCHIVED_FILTERS`); Zod: `ArchivedFilterSchema` in
 [`src/schemas/project.schema.ts`](../../src/schemas/project.schema.ts).
 

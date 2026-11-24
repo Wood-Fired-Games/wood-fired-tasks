@@ -487,7 +487,7 @@ archive fields `null`) plus `"reevaluation_failed_task_ids": []`.
 
 While a project is archived the workflow cascade skips its tasks, so the
 unarchive then re-evaluates it once: `blocked` tasks whose blockers are all
-`done` become `open`, and open parents whose children are all `done` are
+`done` become `open`, and open or in-progress parents whose children are all `done` are
 completed (`source: "workflow"`, usual events). Each task is re-evaluated on
 its own; `reevaluation_failed_task_ids` names those that kept their old state
 (empty on a clean pass). A response **without** the field (an older server)
@@ -1220,7 +1220,7 @@ Lint a project's WSJF state for degeneracies and pitfalls. Backs the `wsjf_healt
 }
 ```
 
-`healthy` is `true` ⇔ `findings` is empty. Each finding carries a `severity` (`info` / `warning` / `critical`), a `suggestion`, and the `taskIds` it implicates. The six checks are `degenerate-spread`, `cod-no-anchor`, `job-size-collapsed`, `stale-time-criticality`, `high-fallback-ratio`, and `score-churn`.
+`healthy` is `true` ⇔ `findings` is empty. Each finding carries a `severity` (`info` / `warning` / `critical`), a `suggestion`, and the `taskIds` it implicates. The eight checks are `degenerate-spread`, `cod-no-anchor`, `job-size-collapsed`, `stale-time-criticality`, `high-fallback-ratio`, `score-churn`, `auto-sized-pending`, and `blocked-by-archived-project`.
 
 **Example:**
 

@@ -185,7 +185,7 @@ from `src/events/types.ts` (zod `z.enum(ALLOWED_EVENT_TYPES)`). Unknown
 top-level keys, unknown handler names, unknown predicate operators, and
 unknown event types are validation errors at startup → exit 78.
 `project.archived` and `project.unarchived` are valid `on:` values (match
-them with `where: {}`; an archived project emits no task events). See rule 3
+them with `where: {}`; an archived project emits no client-driven task events, though the stale-claim sweep can still release a claim there). See rule 3
 in `packages/wft-router/triggers.example.yaml`.
 
 ### Predicate language
