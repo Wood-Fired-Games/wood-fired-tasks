@@ -176,6 +176,37 @@ describe('renderDevicePage', () => {
   });
 });
 
+describe('renderDevicePage: Enter on the confirmation page', () => {
+  const confirming = () =>
+    cheerio.load(
+      renderDevicePage({
+        csrfToken: CSRF,
+        prefilledUserCode: 'ABCDEFGH',
+        errorMessage: null,
+        requestingMachine: 'laptop',
+      }),
+    );
+
+  it('the form’s default button (first submit button) is disabled and is not Approve', () => {
+    const $ = confirming();
+    const first = $('form button[type="submit"]').first();
+    expect(first.attr('value')).not.toBe('approve');
+    expect(first.attr('disabled')).not.toBeUndefined();
+  });
+
+  it('nothing on the confirmation page has autofocus', () => {
+    const $ = confirming();
+    expect($('[autofocus]').length).toBe(0);
+  });
+
+  it('the blank page keeps autofocus on the code field', () => {
+    const $ = cheerio.load(
+      renderDevicePage({ csrfToken: CSRF, prefilledUserCode: null, errorMessage: null }),
+    );
+    expect($('input[name="user_code"]').attr('autofocus')).not.toBeUndefined();
+  });
+});
+
 describe('renderDeviceDeniedPage', () => {
   it('confirms the sign-in was denied', () => {
     const out = renderDeviceDeniedPage();

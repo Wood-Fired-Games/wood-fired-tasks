@@ -82,8 +82,12 @@ export function renderDevicePage(props: DevicePageProps): string {
   // the shown code (the server records that it served this page). Without a
   // machine name the form offers Continue, which shows this page.
   const confirming = requestingMachine !== null && prefilledUserCode !== null;
+  // On the confirmation page the form's default button (the first submit
+  // button, which Enter triggers) is a hidden, disabled one, so Enter submits
+  // nothing; Approve and Deny need a click.
   const actions = confirming
     ? html`
+      <button type="submit" disabled hidden aria-hidden="true" tabindex="-1"></button>
       <button type="submit" name="action" value="approve">Approve</button>
       <button type="submit" name="action" value="deny">Deny</button>
     `
@@ -109,8 +113,7 @@ export function renderDevicePage(props: DevicePageProps): string {
           autocomplete="off"
           autocapitalize="characters"
           spellcheck="false"
-          autofocus
-          ${unsafe(confirming ? 'readonly' : '')}
+          ${unsafe(confirming ? 'readonly' : 'autofocus')}
           value="${prefilledUserCode ?? ''}">
       </label>
       ${unsafe(actions)}
