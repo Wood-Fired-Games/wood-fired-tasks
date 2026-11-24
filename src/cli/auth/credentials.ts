@@ -187,9 +187,9 @@ export function writeCredentials(
     writeFileSync(tmp, body, { mode: 0o600 });
     chmodSync(tmp, 0o600);
   } else {
-    // Windows ignores the mode bits. Create the file empty, limit it to the
-    // current account, and only then write the token into it. If access
-    // cannot be limited, remove the empty file and fail.
+    // Windows uses access lists rather than mode bits: create the file
+    // empty, limit it to the current account, then write the token. On any
+    // failure the temporary file is removed and the error is raised.
     writeFileSync(tmp, '');
     try {
       restrictToOwnerOnWindows(tmp);

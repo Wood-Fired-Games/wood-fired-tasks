@@ -21,10 +21,7 @@ function system32(program: string, env: Record<string, string | undefined>): str
   return path.win32.join(windowsDir, 'System32', program);
 }
 
-/**
- * Absolute path of `icacls.exe` under the Windows directory. A bare name
- * would be resolved against the current directory before PATH.
- */
+/** Absolute path of `icacls.exe` under the Windows directory. */
 export function icaclsPath(env: Record<string, string | undefined> = process.env): string {
   return system32('icacls.exe', env);
 }

@@ -254,7 +254,7 @@ describe('device sign-in: issued token', () => {
       expect(expiresMs).toBeLessThanOrEqual(after + 90 * DAY_MS);
     });
 
-    it('the issued token is never empty-scoped and does not reach the admin tier', async () => {
+    it('the issued token satisfies read and write and not admin', async () => {
       const { user_code } = await startSignIn(h.app, 'laptop');
       expect((await approveAs(h.app, h.userA, user_code)).statusCode).toBe(200);
 
@@ -578,7 +578,7 @@ describe('device sign-in: issued token', () => {
   });
 
   describe('one approver, one token per session', () => {
-    it('two users: the second submission of an approved code is refused and the CLI receives the first approver’s token', async () => {
+    it('two users: the CLI receives the approving user’s token and a later submission is answered with 400', async () => {
       // User A's CLI starts a sign-in and user A approves it.
       const { device_code, user_code } = await startSignIn(h.app, 'laptop-a');
       const first = await approveAs(h.app, h.userA, user_code);
@@ -588,7 +588,7 @@ describe('device sign-in: issued token', () => {
       const tokenIdA = afterFirst?.mintedTokenId;
       expect(tokenA).toMatch(/^wft_pat_/);
 
-      // Before the CLI polls, user B submits the same code.
+      // User B then submits the same code.
       const second = await approveAs(h.app, h.userB, user_code);
       expect(second.statusCode).toBe(400);
       expect(second.body.toLowerCase()).not.toContain('<h1>approved</h1>');

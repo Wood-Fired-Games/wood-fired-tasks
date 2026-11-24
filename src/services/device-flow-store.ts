@@ -43,7 +43,7 @@ export const CLEANUP_TICK_MS = 60_000;
 
 /**
  * Scope of the token issued by device sign-in: what the CLI needs for normal
- * use (reading and changing tasks). Never `admin`, and never the empty array.
+ * use: reading and changing tasks.
  */
 export const DEVICE_TOKEN_SCOPES: readonly PatScope[] = ['read', 'write'];
 
