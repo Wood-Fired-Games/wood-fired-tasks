@@ -16,7 +16,7 @@ The table below lists every agent-facing file the repository commits to ship. Re
 | 1 | `AGENTS.md` | Navigation hub | 150 / ~2k | First read. Vendor-neutral entry point. Points at everything below. |
 | 2 | `docs/AGENT_CONTEXT.md` | Contract (this file) | 400 / ~6k | Rules: which files matter, who owns them, how they stay fresh. |
 | 3 | `docs/REPO_MAP.md` | Repository map | 250 / ~4k | Compact tree of `src/`, `docs/`, `scripts/`, with one-line ownership per top-level dir. |
-| 4 | `docs/ARCHITECTURE.md` | System one-pager | 350 / ~7k | Data flow across API, MCP, CLI, Slack, DB. Boundaries, not internals. |
+| 4 | `docs/ARCHITECTURE.md` | System one-pager | 380 / ~7k | Data flow across API, MCP, CLI, Slack, DB. Boundaries, not internals. |
 | 5 | `docs/WORKFLOWS.md` | Command recipes | 250 / ~4k | Canonical `build`, `test`, `lint`, `migrate`, `run`, `smoke` recipes. |
 | 6 | `docs/INTERFACES.md` | Surface index | 400 / ~6k | Compact list of API routes, MCP tools, CLI subcommands with source file pointers. |
 | 7 | `docs/NAVIGATION.md` | Task-oriented index | 300 / ~5k | "If you want to do X, read these files in this order." One section per surface. |
@@ -86,7 +86,7 @@ See section 2 table. The hard limits there are upper bounds. Targets:
 - `AGENTS.md`: ≤ 150 lines. Anything longer belongs in `docs/`. This is the "first thousand tokens of an agent's context" file and must stay scannable.
 - `docs/AGENT_CONTEXT.md`: ≤ 400 lines.
 - `docs/REPO_MAP.md`: ≤ 250 lines.
-- `docs/ARCHITECTURE.md`: ≤ 350 lines (bumped from 300 by the milestone-close audit, task #286 — the doc landed at exactly 300/300 with no headroom for a subsequent edit; see `scripts/agent-context/manifest.ts`).
+- `docs/ARCHITECTURE.md`: ≤ 380 lines (bumped from 300 to 350 by the milestone-close audit, task #286 — the doc landed at exactly 300/300 with no headroom for a subsequent edit — and from 350 to 380 by WFT #2484, archived project state; see `scripts/agent-context/manifest.ts`).
 - `docs/WORKFLOWS.md`: ≤ 250 lines.
 - `docs/INTERFACES.md`: ≤ 400 lines.
 - `docs/NAVIGATION.md`: ≤ 300 lines.

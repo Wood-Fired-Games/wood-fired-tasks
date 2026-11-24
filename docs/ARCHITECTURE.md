@@ -147,7 +147,7 @@ number is trusted and any stored score is replayable without the model.
    charter, **skips locked components**, and commits component updates, one `wsjf_score_history` row per changed task, and the `wsjf_rescore_run` record in one transaction (per-task failures return in `errors[]` without aborting the batch).
 5. **History + linter** — every score write appends an immutable
    `wsjf_score_history` row (full classifications + features + evidence) in the
-   same transaction. `WsjfHealthService` is a pure, non-blocking linter for six degeneracies (`degenerate-spread`, `cod-no-anchor`, `job-size-collapsed`, `stale-time-criticality`, `high-fallback-ratio`, `score-churn`).
+   same transaction. `WsjfHealthService` is a pure, non-blocking linter with eight checks (`degenerate-spread`, `cod-no-anchor`, `job-size-collapsed`, `stale-time-criticality`, `high-fallback-ratio`, `score-churn`, `auto-sized-pending`, `blocked-by-archived-project`).
 
 Surface (full stdio↔remote MCP parity): 4 MCP tools (`wsjf_ranking`,
 `wsjf_history`, `rescore_project`, `wsjf_health`), the WSJF REST routes under

@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-11-23T23:59:29.165Z",
+    "generated_at": "2026-11-24T07:25:05.476Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -36,7 +36,7 @@
       "status": "present",
       "approx_token_budget": 8000,
       "actual_lines": 309,
-      "sha256": "2078fe7dfa1ba78bfd8e2062f2da67a37cbb6a707a5f9bcc1d687c7cd28c3f74",
+      "sha256": "9bd676f280082b9865c1d36d657fe9ab17c2b2730fab6afc23598af1b3516573",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -50,7 +50,7 @@
       "status": "present",
       "approx_token_budget": 5000,
       "actual_lines": 160,
-      "sha256": "9497e358cc27ab59d649a2c284a10b17947bc51937952c4243ac5d9ff280182f",
+      "sha256": "4db9e87c94048402aac77881f23b7a9b46c183a028045ff910e8de5ef03d31a0",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -64,7 +64,7 @@
       "status": "present",
       "approx_token_budget": 7600,
       "actual_lines": 375,
-      "sha256": "1cfedf4e927edbc056b8d7ea3499cf2cfca61ea00e33de902999c9c05089ae98",
+      "sha256": "61e7f0b835ceb647efd7a3da47e91ce52663410d74595d1367b718b5d6a2cd7b",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -122,7 +122,7 @@
       "notes": "Advisory budget — currently exceeds the contract target; tighten in a follow-up.",
       "approx_token_budget": 34600,
       "actual_lines": 1727,
-      "sha256": "54e6f5e2f9c2a0315fa7ef41c2a56bc24fe89da59979b891214e55b6c0280929"
+      "sha256": "6b974a07d5a4240b56aab74a3b0815f3eec53de66b3452205b5377c59ade376c"
     },
     {
       "path": "docs/MCP.md",
@@ -136,7 +136,7 @@
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 30000,
       "actual_lines": 1408,
-      "sha256": "e471f20f8f49476b84d0c1774e2627f08f91d3fd7f85013b98fff6ee56e56f2a"
+      "sha256": "abae4e4f0239e68a079077b2b34bf35a4c7d567b7c40d294451dd6d4876cc488"
     },
     {
       "path": "docs/CLI.md",
@@ -163,8 +163,8 @@
       "status": "present",
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 32400,
-      "actual_lines": 1587,
-      "sha256": "6131bbe83f814c7e7cd7c0d789d844d83dc251178d83faf367de6e6e9a993f0f"
+      "actual_lines": 1593,
+      "sha256": "004832f0647b5f846144d21cb2d27156a06ea1d7fb7c3f3ca363ced350abb2af"
     },
     {
       "path": "docs/SLACK.md",
@@ -360,7 +360,7 @@
       "notes": "Referenced by llms.txt and docs/README.md's Automation index — proof it was already discoverable through 2 of the 5 doc indexes while missing from this manifest, exactly the drift class task #1609's guard now catches.",
       "approx_token_budget": 20000,
       "actual_lines": 961,
-      "sha256": "cd1108fcad86102bbfb68f602f59b7044a8299e69e8277a036fcd72e8ee8858f",
+      "sha256": "7f3963709de738802ce428e5d855b91f84476997b0056d470ccbed6d565e9111",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -459,7 +459,7 @@
       "status": "present",
       "approx_token_budget": 2100,
       "actual_lines": 103,
-      "sha256": "e885781a87e0eb32b8599a21fe259e0cbf13901585388b50f1bd64e5ad170217",
+      "sha256": "80bec047112ee73d86e979e59cd6b860a656de2393e7d0ce1ecbade32a908008",
       "actual_owner": "Repository maintainers"
     },
     {

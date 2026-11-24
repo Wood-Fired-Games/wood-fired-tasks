@@ -399,7 +399,7 @@ The MCP server exposes 33 tools organized by domain:
 | `wsjf_ranking` | WSJF | Rank a project's tasks by propagation-adjusted WSJF; `scope="frontier"` (default) excludes blocked/not-ready, `scope="all"` ranks every task; returns base vs effective WSJF with the downstream Cost-of-Delay propagation breakdown. |
 | `wsjf_history` | WSJF | Return a task's append-only WSJF score-history timeline (oldest-first), each entry annotated with a `deltas` map of per-component from→to changes vs the previous entry. |
 | `rescore_project` | WSJF | (MUTATION) Deterministically rescore a project's already-scored tasks against the current value charter; skips locked components, writes one history row per changed task. |
-| `wsjf_health` | WSJF | Lint a project's WSJF state for degeneracies/pitfalls (non-blocking): near-identical scores, missing CoD `1` anchor, collapsed Job Size, stale Time Criticality, high fallback ratio, score-churn, auto-sized-pending. |
+| `wsjf_health` | WSJF | Lint a project's WSJF state for degeneracies/pitfalls (non-blocking): near-identical scores, missing CoD `1` anchor, collapsed Job Size, stale Time Criticality, high fallback ratio, score-churn, auto-sized-pending, blocked by an archived project. |
 | `wait_for_unblock` | Task | Long-poll (block) until a task transitions `blocked` -> `open`, then return the fresh projection. On both servers: local resolves over the in-process bus, remote over the SSE stream. |
 
 ### Task Tools (9 tools)
@@ -760,9 +760,9 @@ optional `behaviors` toggles; pass `null` to clear it. A malformed `scm` value
 #### archive_project
 
 Archive a project. It leaves default listings and becomes read-only: its tasks
-stay readable by id and comments are still allowed, but every other write is
-refused with an `InvalidRequest` error whose message starts with
-`project_archived:`. Requires the `write` scope. `archived_by` is the caller's
+stay readable by id, comments can still be added and deleted, and the project can
+still be deleted, but every other write is refused with an `InvalidRequest` error
+whose message contains `project_archived:`. Requires the `write` scope. `archived_by` is the caller's
 identity, never an argument.
 
 **Input Schema:**
@@ -1098,7 +1098,7 @@ all-`'auto'`.
 
 #### wsjf_health
 
-Lint a project's WSJF state for degeneracies and pitfalls. **Non-blocking and advisory** — findings never block the loop or trigger an auto-rescore. Empty findings ⇔ healthy. The seven severity-tagged checks are `degenerate-spread` (near-identical component sets), `cod-no-anchor` (a Cost-of-Delay column with no `1` anchor), `job-size-collapsed`, `stale-time-criticality` (past a deadline), `high-fallback-ratio`, `score-churn` (only possible because the score-history table exists), and `auto-sized-pending` (guaranteed-task-sizing #993; severity `info`) — tasks that are auto-sized (`wsjf_source.jobSize === 'auto'`) with their three Cost-of-Delay components still NULL, i.e. the size-only auto-write has run but no full classification has followed. The `auto-sized-pending` finding is an informational reminder to classify the Cost-of-Delay components so the task contributes a real WSJF score; it never blocks. Proxies `GET /api/v1/projects/:id/wsjf-health` on the remote server.
+Lint a project's WSJF state for degeneracies and pitfalls. **Non-blocking and advisory** — findings never block the loop or trigger an auto-rescore. Empty findings ⇔ healthy. The eight severity-tagged checks are `degenerate-spread` (near-identical component sets), `cod-no-anchor` (a Cost-of-Delay column with no `1` anchor), `job-size-collapsed`, `stale-time-criticality` (past a deadline), `high-fallback-ratio`, `score-churn` (only possible because the score-history table exists), `blocked-by-archived-project` (severity `warning`: an unfinished task blocked by unfinished work in an archived project, which cannot finish until that project is unarchived or the dependency is removed), and `auto-sized-pending` (guaranteed-task-sizing #993; severity `info`) — tasks that are auto-sized (`wsjf_source.jobSize === 'auto'`) with their three Cost-of-Delay components still NULL, i.e. the size-only auto-write has run but no full classification has followed. The `auto-sized-pending` finding is an informational reminder to classify the Cost-of-Delay components so the task contributes a real WSJF score; it never blocks. Proxies `GET /api/v1/projects/:id/wsjf-health` on the remote server.
 
 **Input Schema:**
 

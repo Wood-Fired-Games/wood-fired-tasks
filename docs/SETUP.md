@@ -1316,7 +1316,7 @@ compatibility with older `~/.claude.json` installs.
 
 ### Migrations
 
-Fifteen migration files in `src/db/migrations/`:
+Twenty-one migration files in `src/db/migrations/`:
 
 1. `001-initial-schema.ts` — Creates `projects`, `tasks`, `task_tags`, `dependencies`, `comments` tables.
 2. `002-task-hierarchy-and-dependencies.ts` — Task hierarchy (`parent_task_id`) and dependency tracking.
@@ -1333,6 +1333,12 @@ Fifteen migration files in `src/db/migrations/`:
 13. `013-wsjf-fields.ts` — Adds the per-task WSJF columns: four CHECK-constrained Fibonacci component columns (`wsjf_value`, `wsjf_time_criticality`, `wsjf_risk_opportunity`, `wsjf_job_size`) plus five JSON metadata columns (`wsjf_evidence`, `wsjf_locked`, `wsjf_source`, `wsjf_classifications`, `wsjf_features`). All nullable; the all-four-or-none invariant is enforced at the DTO boundary.
 14. `014-value-charter.ts` — Adds the nullable JSON `projects.value_charter` column (per-project Business-Value reference frame captured by `/tasks:new-project`).
 15. `015-wsjf-audit.ts` — Creates the three append-only WSJF audit tables (in FK order): `wsjf_rescore_run` (one row per rescore event), `wsjf_score_history` (one immutable row per score write, storing full classification inputs for replay), and `project_charter_history` (full charter snapshot per interview version), with their supporting indexes.
+16. `016-model-policy.ts` — Adds the nullable JSON `projects.model_policy` column and the single-row `app_settings` table holding the database-wide default model policy.
+17. `017-scm-charter.ts` — Adds the nullable JSON `projects.scm` column (per-project source-control charter default).
+18. `018-audit-events.ts` — Creates the append-only `audit_events` table.
+19. `019-audit-events-hash-chain.ts` — Adds `prev_hash` and `row_hash` to `audit_events`, a SHA-256 hash chain that makes a rewritten or deleted row detectable.
+20. `020-api-token-project-scope.ts` — Adds the nullable `api_tokens.project_id` column: a token may be bound to one project.
+21. `021-project-archive.ts` — Adds the nullable `projects.archived_at`, `archived_by` and `archive_reason` columns; a project is archived exactly when `archived_at` is set.
 
 ### Task statuses
 
