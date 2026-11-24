@@ -395,7 +395,7 @@ describe('device sign-in: issued token', () => {
   });
 
   describe('confirmation is held by the server', () => {
-    it('an approve posted by hand, without the page naming the machine having been served, approves nothing', async () => {
+    it('an approve for a code whose machine-naming page was not served approves nothing', async () => {
       const { device_code, user_code } = await startSignIn(h.app, 'laptop');
       const cookie = await signIn(h.app, h.userA);
       // Only the blank page is served (for a CSRF token); the code's page never is.
