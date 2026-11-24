@@ -30,13 +30,18 @@
 import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify';
 import {
   approve,
+  deny,
   DEVICE_TOKEN_SCOPES,
   deviceTokenExpiresAt,
   findByUserCode,
   recordMintedToken,
   tokenName,
 } from '../../../services/device-flow-store.js';
-import { renderDevicePage, renderDeviceApprovedPage } from '../../../web/pages/device.js';
+import {
+  renderDevicePage,
+  renderDeviceApprovedPage,
+  renderDeviceDeniedPage,
+} from '../../../web/pages/device.js';
 import { getOrCreateCsrfToken, verifyCsrfToken } from './csrf.js';
 import { requireUser } from '../../plugins/auth.js';
 import { generateToken } from '../../../services/pat-hash.js';
@@ -73,6 +78,8 @@ interface DeviceQuery {
 interface VerifyBody {
   user_code?: unknown;
   _csrf?: unknown;
+  /** `'deny'` denies the session; anything else (or absent) approves. */
+  action?: unknown;
 }
 
 const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fastify, opts) => {
@@ -107,10 +114,18 @@ const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fasti
     // session.csrf entry on first visit so the subsequent POST has
     // something to validate against.
     const csrfToken = getOrCreateCsrfToken(request);
+    // Name the machine that started the sign-in, when the code belongs to a
+    // pending, unexpired session.
+    const pending = safeUserCode !== null ? findByUserCode(safeUserCode) : undefined;
+    const requestingMachine =
+      pending !== undefined && pending.status === 'pending' && Date.now() <= pending.expiresAt
+        ? pending.hostname
+        : null;
     const html = renderDevicePage({
       csrfToken,
       prefilledUserCode: safeUserCode,
       errorMessage: null,
+      requestingMachine,
     });
     return reply
       .header('Cache-Control', 'no-store')
@@ -201,6 +216,17 @@ const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fasti
       //    page and issues nothing new; any other non-pending session is
       //    refused.
       const user = requireUser(request);
+
+      // Deny: only a pending session can be denied. Terminal — the CLI sees
+      // access_denied on its next poll and no token is issued.
+      if (body.action === 'deny') {
+        if (!deny(userCode)) {
+          return replyHtml(reply, 400, renderUsedCodePage(request));
+        }
+        request.log.info({ event: 'device_flow_denied', userId: user.id }, 'device flow denied');
+        return replyHtml(reply, 200, renderDeviceDeniedPage());
+      }
+
       if (session.status !== 'pending') {
         const sameApprover = session.status === 'approved' && session.approvedUserId === user.id;
         if (sameApprover && session.mintedToken !== null) {

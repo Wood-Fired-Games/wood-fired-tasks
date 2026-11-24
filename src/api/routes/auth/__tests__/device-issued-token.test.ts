@@ -227,6 +227,64 @@ describe('device sign-in: issued token', () => {
     });
   });
 
+  describe('approval page: requesting machine and Deny', () => {
+    async function submit(
+      userId: number,
+      userCode: string,
+      action: 'approve' | 'deny',
+    ): Promise<{ statusCode: number; body: string }> {
+      const cookie = await signIn(h.app, userId);
+      const page = await openApprovalPage(h.app, cookie, userCode);
+      const res = await h.app.inject({
+        method: 'POST',
+        url: '/auth/device/verify',
+        payload: new URLSearchParams({ _csrf: page.csrf, user_code: userCode, action }).toString(),
+        headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: page.cookie },
+      });
+      return { statusCode: res.statusCode, body: res.body };
+    }
+
+    it('the approval page names the machine that started the sign-in', async () => {
+      const { user_code } = await startSignIn(h.app, 'Build Box 7');
+      const cookie = await signIn(h.app, h.userA);
+      const page = await openApprovalPage(h.app, cookie, user_code);
+      const $ = cheerio.load(page.body);
+      expect($('.requesting-machine').text()).toContain('build-box-7');
+    });
+
+    it('Deny marks the session denied, issues no token, and the CLI is told access_denied', async () => {
+      const { device_code, user_code } = await startSignIn(h.app, 'laptop');
+      const denied = await submit(h.userA, user_code, 'deny');
+      expect(denied.statusCode).toBe(200);
+      expect(denied.body.toLowerCase()).toContain('denied');
+      expect(findByDeviceCode(device_code)?.status).toBe('denied');
+      expect(tokenRows(h.db)).toHaveLength(0);
+
+      const polled = await poll(h.app, device_code);
+      expect(polled.statusCode).toBe(400);
+      expect(polled.json['error']).toBe('access_denied');
+    });
+
+    it('a denied session cannot later be approved', async () => {
+      const { device_code, user_code } = await startSignIn(h.app, 'laptop');
+      expect((await submit(h.userA, user_code, 'deny')).statusCode).toBe(200);
+
+      const approveAfter = await submit(h.userA, user_code, 'approve');
+      expect(approveAfter.statusCode).toBe(400);
+      expect(findByDeviceCode(device_code)?.status).toBe('denied');
+      expect(findByDeviceCode(device_code)?.approvedUserId).toBeNull();
+      expect(tokenRows(h.db)).toHaveLength(0);
+    });
+
+    it('Deny on an already approved session is refused and leaves the approval in place', async () => {
+      const { device_code, user_code } = await startSignIn(h.app, 'laptop');
+      expect((await submit(h.userA, user_code, 'approve')).statusCode).toBe(200);
+      const denyAfter = await submit(h.userB, user_code, 'deny');
+      expect(denyAfter.statusCode).toBe(400);
+      expect(findByDeviceCode(device_code)?.status).toBe('approved');
+    });
+  });
+
   describe('one approver, one token per session', () => {
     it('two users: the second submission of an approved code is refused and the CLI receives the first approver’s token', async () => {
       // User A's CLI starts a sign-in and user A approves it.

@@ -46,10 +46,25 @@ export interface DevicePageProps {
    * BEFORE the form.
    */
   errorMessage: string | null;
+  /**
+   * Name of the machine that started the sign-in, as the CLI reported it.
+   * Client-supplied text: rendered only through the escaping `html` template.
+   * Omitted or `null` when no pending session matches the prefilled code.
+   */
+  requestingMachine?: string | null;
 }
 
 export function renderDevicePage(props: DevicePageProps): string {
   const { csrfToken, prefilledUserCode, errorMessage } = props;
+  const requestingMachine = props.requestingMachine ?? null;
+
+  const machineLine =
+    requestingMachine !== null
+      ? html`
+      <p class="requesting-machine">Requested by the machine: <strong>${requestingMachine}</strong></p>
+      <p>Approve only if you started this sign-in on that machine.</p>
+    `
+      : '';
 
   const errorBlock = errorMessage
     ? html`
@@ -67,6 +82,7 @@ export function renderDevicePage(props: DevicePageProps): string {
     <h1>Approve CLI sign-in</h1>
     ${unsafe(errorBlock)}
     ${unsafe(prefilledEcho)}
+    ${unsafe(machineLine)}
     <form method="POST" action="/auth/device/verify">
       <input type="hidden" name="_csrf" value="${csrfToken}">
       <label>
@@ -83,11 +99,20 @@ export function renderDevicePage(props: DevicePageProps): string {
           autofocus
           value="${prefilledUserCode ?? ''}">
       </label>
-      <button type="submit">Approve</button>
+      <button type="submit" name="action" value="approve">Approve</button>
+      <button type="submit" name="action" value="deny">Deny</button>
     </form>
   `;
 
   return layout({ title: 'Approve CLI sign-in', body });
+}
+
+export function renderDeviceDeniedPage(): string {
+  const body = html`
+    <h1>Denied</h1>
+    <p>The sign-in was denied and no token was issued. You can close this window.</p>
+  `;
+  return layout({ title: 'Denied', body });
 }
 
 export function renderDeviceApprovedPage(): string {

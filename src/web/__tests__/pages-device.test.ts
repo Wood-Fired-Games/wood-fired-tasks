@@ -19,7 +19,11 @@
  */
 import { describe, it, expect } from 'vitest';
 import * as cheerio from 'cheerio';
-import { renderDevicePage, renderDeviceApprovedPage } from '../pages/device.js';
+import {
+  renderDevicePage,
+  renderDeviceApprovedPage,
+  renderDeviceDeniedPage,
+} from '../pages/device.js';
 
 const CSRF = 'a'.repeat(64);
 
@@ -45,8 +49,8 @@ describe('renderDevicePage', () => {
     expect(ucInput.attr('required')).not.toBeUndefined();
     expect(ucInput.attr('maxlength')).toBe('8');
     expect(ucInput.attr('pattern')).toBe('[A-HJ-KM-NP-Z2-9]{8}');
-    // Submit button
-    expect(form.find('button[type="submit"]').length).toBe(1);
+    // Submit buttons: Approve and Deny
+    expect(form.find('button[type="submit"]').length).toBe(2);
     // No prefilled-code paragraph when prefilledUserCode is null
     expect($('p.prefilled-code').length).toBe(0);
     // No error paragraph when errorMessage is null
@@ -114,6 +118,58 @@ describe('renderDevicePage', () => {
       prefilledUserCode: null,
       errorMessage: null,
     });
+    expect(out.toLowerCase().startsWith('<!doctype html>')).toBe(true);
+  });
+
+  it('shows the requesting machine name when one is supplied', () => {
+    const out = renderDevicePage({
+      csrfToken: CSRF,
+      prefilledUserCode: 'ABCDEFGH',
+      errorMessage: null,
+      requestingMachine: 'build-box-7',
+    });
+    const $ = cheerio.load(out);
+    expect($('.requesting-machine').text()).toContain('build-box-7');
+  });
+
+  it('escapes the requesting machine name', () => {
+    const out = renderDevicePage({
+      csrfToken: CSRF,
+      prefilledUserCode: 'ABCDEFGH',
+      errorMessage: null,
+      requestingMachine: '<script>alert(1)</script>',
+    });
+    expect(out).not.toContain('<script>alert(1)</script>');
+    expect(out).toContain('&lt;script&gt;');
+    const $ = cheerio.load(out);
+    expect($('script').length).toBe(0);
+    expect($('.requesting-machine').text()).toContain('<script>alert(1)</script>');
+  });
+
+  it('renders no machine line when no machine name is supplied', () => {
+    const out = renderDevicePage({ csrfToken: CSRF, prefilledUserCode: null, errorMessage: null });
+    const $ = cheerio.load(out);
+    expect($('.requesting-machine').length).toBe(0);
+  });
+
+  it('offers Approve and Deny as two submit buttons of the same form', () => {
+    const out = renderDevicePage({ csrfToken: CSRF, prefilledUserCode: null, errorMessage: null });
+    const $ = cheerio.load(out);
+    const approveBtn = $('form button[name="action"][value="approve"]');
+    const denyBtn = $('form button[name="action"][value="deny"]');
+    expect(approveBtn.length).toBe(1);
+    expect(approveBtn.attr('type')).toBe('submit');
+    expect(approveBtn.text()).toContain('Approve');
+    expect(denyBtn.length).toBe(1);
+    expect(denyBtn.attr('type')).toBe('submit');
+    expect(denyBtn.text()).toContain('Deny');
+  });
+});
+
+describe('renderDeviceDeniedPage', () => {
+  it('confirms the sign-in was denied', () => {
+    const out = renderDeviceDeniedPage();
+    expect(out.toLowerCase()).toContain('denied');
     expect(out.toLowerCase().startsWith('<!doctype html>')).toBe(true);
   });
 });
