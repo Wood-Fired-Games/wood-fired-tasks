@@ -443,8 +443,8 @@ describe('POST /auth/device/verify', () => {
       expect(row).toBeDefined();
       expect(row?.user_id).toBe(harness.legacyUserId);
       expect(row?.name).toBe(`cli-laptop-${todayUtc()}`);
-      expect(row?.expires_at).toBeNull();
-      expect(row?.scopes).toBe('[]');
+      expect(row?.expires_at).not.toBeNull();
+      expect(row?.scopes).toBe('["read","write"]');
       // Hash matches the plaintext stored on the session.
       expect(row?.hash).toBe(hashToken(after?.mintedToken ?? ''));
     });

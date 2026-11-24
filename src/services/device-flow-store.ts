@@ -33,12 +33,27 @@
  * @see .planning/phases/30-cli-authentication/30-01-PLAN.md
  */
 import { randomBytes } from 'node:crypto';
+import type { PatScope } from '../schemas/pat-scope.schema.js';
 
 /** RFC 8628 §3.2 default `expires_in` — 10 minutes. */
 export const SESSION_TTL_MS = 600_000;
 
 /** Cleanup cadence — every 60 s we prune entries past their TTL. */
 export const CLEANUP_TICK_MS = 60_000;
+
+/**
+ * Scope of the token issued by device sign-in: what the CLI needs for normal
+ * use (reading and changing tasks). Never `admin`, and never the empty array.
+ */
+export const DEVICE_TOKEN_SCOPES: readonly PatScope[] = ['read', 'write'];
+
+/** Lifetime of the token issued by device sign-in, in days. */
+export const DEVICE_TOKEN_LIFETIME_DAYS = 90;
+
+/** ISO-8601 expiry for a device sign-in token issued at `now` (ms). */
+export function deviceTokenExpiresAt(now: number = Date.now()): string {
+  return new Date(now + DEVICE_TOKEN_LIFETIME_DAYS * 24 * 60 * 60 * 1000).toISOString();
+}
 
 /**
  * 31-symbol user_code alphabet — RFC 8628 §6.1 recommends a "subset that

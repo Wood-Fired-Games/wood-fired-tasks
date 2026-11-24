@@ -30,6 +30,8 @@
 import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify';
 import {
   approve,
+  DEVICE_TOKEN_SCOPES,
+  deviceTokenExpiresAt,
   findByUserCode,
   recordMintedToken,
   tokenName,
@@ -236,8 +238,8 @@ const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fasti
           prefix,
           suffix,
           hash,
-          scopes: JSON.stringify([]),
-          expiresAt: null,
+          scopes: JSON.stringify(DEVICE_TOKEN_SCOPES),
+          expiresAt: deviceTokenExpiresAt(),
         });
         // WR-01 (Phase 30 review) — `recordMintedToken` returns `false`
         // when the session is no longer in 'approved' state (e.g. a
