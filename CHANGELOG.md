@@ -53,6 +53,7 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
   server process; after a restart, archive and unarchive again.
 
 ### Changed
+- **Device sign-in:** `tasks login` tokens have `read`/`write` scopes and a 90-day expiry; the approval page names the requesting machine and offers Deny; issuance is audited; Windows credentials files are owner-only.
 - **`wft-router` sweeps skip archived projects.** A rule with a numeric
   `project:` is skipped when the project is archived; a failed project
   lookup logs `wft_router_sweep_project_lookup_failed` and runs the rule

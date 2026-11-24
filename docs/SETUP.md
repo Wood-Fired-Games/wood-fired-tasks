@@ -119,7 +119,7 @@ over HTTP, so every machine sees one backlog.
 
 When you pass `--token <pat>`, setup **validates it against `GET /api/v1/me`** and
 **persists it to the CLI credentials file** (`~/.config/wood-fired-tasks/credentials`,
-mode `0600` on POSIX) — the *same* file `tasks login` writes. The remote bridge
+mode `0600` on POSIX, owner-only access on Windows) — the *same* file `tasks login` writes. The remote bridge
 then resolves its bearer token from that credentials file at runtime. There is no
 separate PAT "cache" file (the old `remote-token` cache was removed in #858 —
 nothing read it, so `setup --remote --token` reported success while leaving both

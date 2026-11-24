@@ -17,7 +17,7 @@ All endpoints under `/api/v1` require authentication via a Personal Access Token
 
 The only public, unauthenticated endpoint is `/health` (minimal liveness probe).
 
-Mint a PAT via the web UI (`/me`), `tasks login` (OIDC device flow), or `tasks db mint-token` (headless bootstrap). PAT values start with `wft_pat_`. See [SETUP.md](SETUP.md) for the full minting and bootstrap flow.
+Mint a PAT via the web UI (`/me`), `tasks login` (OIDC device flow), or `tasks db mint-token` (headless bootstrap). A token from `tasks login` has the `read` and `write` scopes and expires after 90 days. PAT values start with `wft_pat_`. See [SETUP.md](SETUP.md) for the full minting and bootstrap flow.
 
 ### Example Request
 
