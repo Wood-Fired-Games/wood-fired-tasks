@@ -14,16 +14,21 @@ import { execFileSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 
+/**
+ * The Windows System32 directory, as a fixed path. It is not taken from the
+ * environment; on a system installed elsewhere the command is not found and
+ * the credentials write fails rather than proceeding.
+ */
+const SYSTEM32 = 'C:\\Windows\\System32';
+
 /** Absolute path of a program in the Windows System32 directory. */
-function system32(program: string, env: Record<string, string | undefined>): string {
-  const root = env['SystemRoot'];
-  const windowsDir = root && path.win32.isAbsolute(root) ? root : 'C:\\Windows';
-  return path.win32.join(windowsDir, 'System32', program);
+function system32(program: string): string {
+  return path.win32.join(SYSTEM32, program);
 }
 
-/** Absolute path of `icacls.exe` under the Windows directory. */
-export function icaclsPath(env: Record<string, string | undefined> = process.env): string {
-  return system32('icacls.exe', env);
+/** Absolute path of `icacls.exe` in System32. */
+export function icaclsPath(): string {
+  return system32('icacls.exe');
 }
 
 /**
@@ -31,7 +36,11 @@ export function icaclsPath(env: Record<string, string | undefined> = process.env
  * The path is resolved to a full Windows path first, so it can never begin
  * with `/` (which icacls would read as a switch).
  */
-export function ownerOnlyAclArgs(filePath: string, account: string): string[] {
+export function ownerOnlyAclArgs(
+  filePath: string,
+  account: string,
+  options: { inheritable?: boolean } = {},
+): string[] {
   if (account.length === 0) {
     throw new Error('Cannot limit file access: no account name');
   }
@@ -39,7 +48,10 @@ export function ownerOnlyAclArgs(filePath: string, account: string): string[] {
   if (target.startsWith('/') || target.startsWith('-')) {
     throw new Error(`Cannot limit file access: unexpected path ${filePath}`);
   }
-  return [target, '/inheritance:r', '/grant:r', `${account}:F`];
+  // `(OI)(CI)` on a directory passes the grant on to files and directories
+  // created inside it.
+  const rights = options.inheritable ? '(OI)(CI)F' : 'F';
+  return [target, '/inheritance:r', '/grant:r', `${account}:${rights}`];
 }
 
 /** The SID in `whoami /user /fo csv /nh` output, or null. */
@@ -49,7 +61,7 @@ export function parseWhoamiSid(output: string): string | null {
 }
 
 function runWhoami(): string {
-  return execFileSync(system32('whoami.exe', process.env), ['/user', '/fo', 'csv', '/nh'], {
+  return execFileSync(system32('whoami.exe'), ['/user', '/fo', 'csv', '/nh'], {
     encoding: 'utf8',
     stdio: 'pipe',
     windowsHide: true,
@@ -74,12 +86,16 @@ export function windowsAccountName(
 }
 
 /**
- * Limit `filePath` to the current account. Throws when `icacls` fails, so a
- * caller never goes on to write a secret into a file it could not protect.
+ * Limit `filePath` (a file, or with `inheritable` a directory and what is
+ * created in it) to the current account. Throws when `icacls` fails, so a
+ * caller never goes on to write a secret into a place it could not limit.
  */
-export function restrictToOwnerOnWindows(filePath: string): void {
+export function restrictToOwnerOnWindows(
+  filePath: string,
+  options: { inheritable?: boolean } = {},
+): void {
   try {
-    execFileSync(icaclsPath(), ownerOnlyAclArgs(filePath, windowsAccountName()), {
+    execFileSync(icaclsPath(), ownerOnlyAclArgs(filePath, windowsAccountName(), options), {
       stdio: 'pipe',
       windowsHide: true,
     });

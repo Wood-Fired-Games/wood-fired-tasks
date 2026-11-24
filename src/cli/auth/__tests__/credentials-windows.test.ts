@@ -7,7 +7,7 @@
  * mocked `execFileSync`. They do not run `icacls` itself.
  */
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
@@ -60,16 +60,15 @@ describe('ownerOnlyAclArgs', () => {
 });
 
 describe('icaclsPath', () => {
-  it('names icacls by absolute path under SystemRoot, never by bare name', () => {
-    expect(icaclsPath({ SystemRoot: 'D:\\Win' })).toBe(
-      path.win32.join('D:\\Win', 'System32', 'icacls.exe'),
-    );
-  });
-
-  it('falls back to C:\\Windows when SystemRoot is unset or not absolute', () => {
-    const expected = path.win32.join('C:\\Windows', 'System32', 'icacls.exe');
-    expect(icaclsPath({})).toBe(expected);
-    expect(icaclsPath({ SystemRoot: 'relative\\dir' })).toBe(expected);
+  it('is the fixed System32 path, whatever SystemRoot says', () => {
+    const saved = process.env['SystemRoot'];
+    try {
+      process.env['SystemRoot'] = 'D:\\Elsewhere';
+      expect(icaclsPath()).toBe('C:\\Windows\\System32\\icacls.exe');
+    } finally {
+      if (saved === undefined) delete process.env['SystemRoot'];
+      else process.env['SystemRoot'] = saved;
+    }
   });
 });
 
@@ -141,7 +140,7 @@ describe('writeCredentials on Windows (simulated)', () => {
 
   async function loadAsWindows(
     execFileSync: (...args: unknown[]) => unknown,
-    writeFileSync?: (...args: unknown[]) => unknown,
+    fsOverrides?: Record<string, (...args: never[]) => unknown>,
   ) {
     vi.resetModules();
     Object.defineProperty(process, 'platform', { value: 'win32' });
@@ -149,13 +148,24 @@ describe('writeCredentials on Windows (simulated)', () => {
       ...(await importOriginal<typeof import('node:child_process')>()),
       execFileSync,
     }));
-    if (writeFileSync) {
+    if (fsOverrides) {
       vi.doMock('node:fs', async (importOriginal) => ({
         ...(await importOriginal<typeof import('node:fs')>()),
-        writeFileSync,
+        ...fsOverrides,
       }));
     }
     return import('../credentials.js');
+  }
+
+  /** Every file under `root`, recursively, with its content. */
+  function filesUnder(root: string): { file: string; content: string }[] {
+    const out: { file: string; content: string }[] = [];
+    for (const name of readdirSync(root)) {
+      const p = path.join(root, name);
+      if (statSync(p).isDirectory()) out.push(...filesUnder(p));
+      else out.push({ file: p, content: readFileSync(p, 'utf8') });
+    }
+    return out;
   }
 
   /** whoami answers with the SID; every other command is recorded. */
@@ -170,28 +180,37 @@ describe('writeCredentials on Windows (simulated)', () => {
     });
   }
 
-  it('limits the file to its owner before the token is written, then moves it into place', async () => {
+  it('limits a new private directory first, writes the token only inside it, then limits the final file', async () => {
     const target = path.join(dir, 'credentials');
-    const calls: { cmd: string; args: string[]; tmp: string; contentAtCall: string }[] = [];
-    const exec = fakeExec((cmd, args) => {
-      const [tmpName] = readdirSync(dir);
-      const tmp = path.join(dir, tmpName as string);
-      calls.push({ cmd, args, tmp, contentAtCall: readFileSync(tmp, 'utf8') });
+    const calls: { args: string[]; files: { file: string; content: string }[]; dirs: string[] }[] =
+      [];
+    const exec = fakeExec((_cmd, args) => {
+      calls.push({
+        args,
+        files: filesUnder(dir),
+        dirs: readdirSync(dir).filter((n) => statSync(path.join(dir, n)).isDirectory()),
+      });
     });
     const { writeCredentials } = await loadAsWindows(exec);
 
     writeCredentials(CREDS, target);
 
-    expect(calls).toHaveLength(1);
-    const call = calls[0] as (typeof calls)[number];
-    expect(path.win32.isAbsolute(call.cmd)).toBe(true);
-    expect(path.win32.basename(call.cmd).toLowerCase()).toBe('icacls.exe');
-    expect(call.tmp).not.toBe(target);
-    expect(call.args[0]).toBe(path.win32.resolve(call.tmp));
-    expect(call.args.slice(1, 3)).toEqual(['/inheritance:r', '/grant:r']);
-    expect(call.args[3]).toBe(`*${SID}:F`);
-    // Nothing secret was on disk when access was limited.
-    expect(call.contentAtCall).not.toContain(CREDS.active.token);
+    expect(calls).toHaveLength(2);
+    const [first, second] = calls as [(typeof calls)[number], (typeof calls)[number]];
+    // 1. A private directory next to the target, limited (with inheritance
+    //    to its files) while it is still empty: no file exists yet anywhere.
+    expect(first.dirs).toHaveLength(1);
+    expect(first.args[0]).toBe(path.win32.resolve(path.join(dir, first.dirs[0] as string)));
+    expect(first.args.slice(1, 3)).toEqual(['/inheritance:r', '/grant:r']);
+    expect(first.args[3]).toBe(`*${SID}:(OI)(CI)F`);
+    expect(first.files).toEqual([]);
+    // 2. The final file, limited explicitly after it was moved into place.
+    expect(second.args[0]).toBe(path.win32.resolve(target));
+    expect(second.args[3]).toBe(`*${SID}:F`);
+    // The token was only ever written inside the private directory.
+    for (const f of second.files) {
+      if (f.content.includes(CREDS.active.token)) expect(f.file).toBe(target);
+    }
     expect(readFileSync(target, 'utf8')).toContain(CREDS.active.token);
     expect(readdirSync(dir)).toEqual(['credentials']);
   });
@@ -219,10 +238,51 @@ describe('writeCredentials on Windows (simulated)', () => {
     });
     const { writeCredentials } = await loadAsWindows(
       fakeExec(() => {}),
-      write,
+      {
+        writeFileSync: write,
+      },
     );
 
     expect(() => writeCredentials(CREDS, target)).toThrow(/disk full/);
+    expect(existsSync(target)).toBe(false);
+    expect(readdirSync(dir)).toEqual([]);
+  });
+
+  it('reports the original error when cleaning up after it also fails', async () => {
+    const target = path.join(dir, 'credentials');
+    const realFs = await vi.importActual<typeof import('node:fs')>('node:fs');
+    const { writeCredentials } = await loadAsWindows(
+      fakeExec(() => {}),
+      {
+        writeFileSync: () => {
+          throw new Error('disk full');
+        },
+        rmSync: () => {
+          throw new Error('cleanup refused');
+        },
+        unlinkSync: () => {
+          throw new Error('cleanup refused');
+        },
+      },
+    );
+
+    expect(() => writeCredentials(CREDS, target)).toThrow(/disk full/);
+    expect(existsSync(target)).toBe(false);
+    // Remove what the refused cleanup left, so the suite's own cleanup runs.
+    realFs.rmSync(dir, { recursive: true, force: true });
+    realFs.mkdirSync(dir);
+  });
+
+  it('removes the final file when it cannot be limited after the move', async () => {
+    const target = path.join(dir, 'credentials');
+    let n = 0;
+    const exec = fakeExec(() => {
+      n += 1;
+      if (n === 2) throw new Error('icacls failed');
+    });
+    const { writeCredentials } = await loadAsWindows(exec);
+
+    expect(() => writeCredentials(CREDS, target)).toThrow(/owner/i);
     expect(existsSync(target)).toBe(false);
     expect(readdirSync(dir)).toEqual([]);
   });
