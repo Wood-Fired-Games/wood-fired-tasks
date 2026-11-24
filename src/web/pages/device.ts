@@ -79,12 +79,11 @@ export function renderDevicePage(props: DevicePageProps): string {
     : '';
 
   // Approve and Deny are offered only on a page that names the machine for
-  // the shown code; the hidden `confirmed_code` records which code that was.
-  // Without a machine name the form offers Continue, which shows this page.
+  // the shown code (the server records that it served this page). Without a
+  // machine name the form offers Continue, which shows this page.
   const confirming = requestingMachine !== null && prefilledUserCode !== null;
   const actions = confirming
     ? html`
-      <input type="hidden" name="confirmed_code" value="${prefilledUserCode}">
       <button type="submit" name="action" value="approve">Approve</button>
       <button type="submit" name="action" value="deny">Deny</button>
     `

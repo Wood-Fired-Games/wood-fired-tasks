@@ -394,6 +394,48 @@ describe('device sign-in: issued token', () => {
     });
   });
 
+  describe('confirmation is held by the server', () => {
+    it('an approve posted by hand, without the page naming the machine having been served, approves nothing', async () => {
+      const { device_code, user_code } = await startSignIn(h.app, 'laptop');
+      const cookie = await signIn(h.app, h.userA);
+      // Only the blank page is served (for a CSRF token); the code's page never is.
+      const blank = await h.app.inject({ method: 'GET', url: '/auth/device', headers: { cookie } });
+      const csrf = cheerio.load(blank.body)('input[name="_csrf"]').attr('value') ?? '';
+      const r = await postVerify(h.app, extractSessionCookie(blank) ?? cookie, {
+        _csrf: csrf,
+        user_code,
+        confirmed_code: user_code,
+        action: 'approve',
+      });
+      expect(r.statusCode).toBe(200);
+      expect(cheerio.load(r.body)('.requesting-machine').text()).toContain('laptop');
+      expect(findByDeviceCode(device_code)?.status).toBe('pending');
+      expect(tokenRows(h.db)).toHaveLength(0);
+    });
+
+    it('a page served while one user was signed in does not let another user approve', async () => {
+      const { device_code, user_code } = await startSignIn(h.app, 'laptop');
+      const cookieA = await signIn(h.app, h.userA);
+      const page = await openApprovalPage(h.app, cookieA, user_code);
+      // The same browser session switches to user B.
+      const switched = await h.app.inject({
+        method: 'POST',
+        url: '/__test/sign-in',
+        payload: { userId: h.userB },
+        headers: { 'content-type': 'application/json', cookie: page.cookie },
+      });
+      const cookieB = extractSessionCookie(switched) ?? page.cookie;
+      const r = await postVerify(h.app, cookieB, {
+        ...hiddenFields(page.body),
+        user_code,
+        action: 'approve',
+      });
+      expect(r.statusCode).toBe(200);
+      expect(findByDeviceCode(device_code)?.status).toBe('pending');
+      expect(tokenRows(h.db)).toHaveLength(0);
+    });
+  });
+
   describe('accepted actions', () => {
     it.each([
       ['missing (a form submitted without a button)', undefined],

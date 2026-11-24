@@ -192,7 +192,7 @@ describe('CR-01 regression — /auth/device/verify wired in auth-chain scope', (
         cookie: refreshed,
         'content-type': 'application/x-www-form-urlencoded',
       },
-      payload: `_csrf=${csrfToken}&user_code=${deviceSession.userCode}&confirmed_code=${deviceSession.userCode}&action=approve`,
+      payload: `_csrf=${csrfToken}&user_code=${deviceSession.userCode}&action=approve`,
     });
 
     // The critical assertion: NOT 500. The handler must complete cleanly.

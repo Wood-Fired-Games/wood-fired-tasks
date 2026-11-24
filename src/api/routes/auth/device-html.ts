@@ -80,8 +80,6 @@ interface VerifyBody {
   _csrf?: unknown;
   /** `'approve'`, `'deny'` or `'continue'`; any other value is refused. */
   action?: unknown;
-  /** The code shown with its machine name on the page that was submitted. */
-  confirmed_code?: unknown;
 }
 
 const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fastify, opts) => {
@@ -135,6 +133,9 @@ const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fasti
           found.approvedUserId === viewerId &&
           found.mintedToken === null));
     const requestingMachine = approvable ? found.hostname : null;
+    if (requestingMachine !== null && safeUserCode !== null && viewerId !== null) {
+      rememberShownCode(request, viewerId, safeUserCode);
+    }
     const html = renderDevicePage({
       csrfToken,
       prefilledUserCode: safeUserCode,
@@ -262,13 +263,14 @@ const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fasti
 
       const sameApprover = session.status === 'approved' && session.approvedUserId === user.id;
 
-      // Confirmation: approval happens only from a page that named the
-      // requesting machine for this code (its form carries
-      // `confirmed_code`). Continue, or an approve without that
-      // confirmation, shows that page and changes nothing.
+      // Confirmation: approval happens only after the server has served
+      // this user a page naming the requesting machine for this code (held
+      // in the server session, see rememberShownCode). Continue, or an
+      // approve without that, serves the page and changes nothing.
       const approvable =
         session.status === 'pending' || (sameApprover && session.mintedToken === null);
-      if (approvable && (action === 'continue' || body.confirmed_code !== userCode)) {
+      if (approvable && (action === 'continue' || !wasShownCode(request, user.id, userCode))) {
+        rememberShownCode(request, user.id, userCode);
         const html = renderDevicePage({
           csrfToken: getOrCreateCsrfToken(request),
           prefilledUserCode: userCode,
@@ -289,6 +291,7 @@ const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fasti
       if (!approve(userCode, user.id)) {
         return replyHtml(reply, 400, renderUsedCodePage(request));
       }
+      forgetShownCode(request, userCode);
 
       // Audit log — userId only. user_code MUST NOT appear (Threat T-30-02-06).
       request.log.info(
@@ -415,6 +418,47 @@ const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fasti
     },
   );
 };
+
+/**
+ * Codes for which the server has served the signed-in user a page naming
+ * the requesting machine. Kept in the server-encrypted session, bound to the
+ * user id it was served to; the most recent few are kept so several open
+ * tabs work.
+ */
+const SHOWN_CODES_KEY = 'deviceShownCodes';
+const SHOWN_CODES_MAX = 5;
+
+interface ShownCodes {
+  userId: number;
+  codes: string[];
+}
+
+function readShownCodes(request: FastifyRequest): ShownCodes | null {
+  const raw: ShownCodes | null | undefined = request.session.get(SHOWN_CODES_KEY);
+  if (!raw || typeof raw.userId !== 'number' || !Array.isArray(raw.codes)) return null;
+  return raw;
+}
+
+function rememberShownCode(request: FastifyRequest, userId: number, code: string): void {
+  const current = readShownCodes(request);
+  const codes = current !== null && current.userId === userId ? current.codes : [];
+  const next = [code, ...codes.filter((c) => c !== code)].slice(0, SHOWN_CODES_MAX);
+  request.session.set(SHOWN_CODES_KEY, { userId, codes: next });
+}
+
+function wasShownCode(request: FastifyRequest, userId: number, code: string): boolean {
+  const current = readShownCodes(request);
+  return current !== null && current.userId === userId && current.codes.includes(code);
+}
+
+function forgetShownCode(request: FastifyRequest, code: string): void {
+  const current = readShownCodes(request);
+  if (current === null) return;
+  request.session.set(SHOWN_CODES_KEY, {
+    userId: current.userId,
+    codes: current.codes.filter((c) => c !== code),
+  });
+}
 
 /** Audit-trail actions written by device sign-in. */
 export const DEVICE_TOKEN_ISSUED_ACTION = 'device_sign_in.token_issued';

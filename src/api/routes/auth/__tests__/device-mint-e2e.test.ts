@@ -220,7 +220,6 @@ describe('device-flow end-to-end (server side)', () => {
     const verifyParams = new URLSearchParams({
       _csrf: csrf,
       user_code: codeBody.user_code,
-      confirmed_code: codeBody.user_code,
       action: 'approve',
     }).toString();
     const verifyRes = await h.app.inject({
@@ -336,7 +335,6 @@ describe('device-flow end-to-end (server side)', () => {
       payload: new URLSearchParams({
         _csrf: csrf,
         user_code,
-        confirmed_code: user_code,
         action: 'approve',
       }).toString(),
       headers: {

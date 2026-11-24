@@ -154,7 +154,7 @@ describe('renderDevicePage', () => {
     expect($('.requesting-machine').length).toBe(0);
   });
 
-  it('offers Approve and Deny, with the confirmed code, only when the machine is named', () => {
+  it('offers Approve and Deny, with the code read-only, only when the machine is named', () => {
     const out = renderDevicePage({
       csrfToken: CSRF,
       prefilledUserCode: 'ABCDEFGH',
@@ -162,7 +162,7 @@ describe('renderDevicePage', () => {
       requestingMachine: 'laptop',
     });
     const $ = cheerio.load(out);
-    expect($('form input[name="confirmed_code"]').attr('value')).toBe('ABCDEFGH');
+    expect($('form input[name="confirmed_code"]').length).toBe(0);
     expect($('form input[name="user_code"]').attr('readonly')).not.toBeUndefined();
     expect($('form button[value="continue"]').length).toBe(0);
     const approveBtn = $('form button[name="action"][value="approve"]');
