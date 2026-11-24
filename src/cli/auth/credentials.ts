@@ -36,6 +36,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { parse, stringify } from 'smol-toml';
 import { z } from 'zod';
+import { restrictToOwnerOnWindows } from './owner-only-file.js';
 
 const POSIX = process.platform !== 'win32';
 
@@ -180,10 +181,24 @@ export function writeCredentials(
   const body = header + stringify(creds);
 
   const tmp = `${filePath}.tmp.${process.pid}.${Date.now()}`;
-  // writeFileSync's `mode` is the open(2) creation mode — combined with the
-  // process umask. Belt-and-braces chmod below pins it to exactly 0o600.
-  writeFileSync(tmp, body, { mode: 0o600 });
-  if (POSIX) chmodSync(tmp, 0o600);
+  if (POSIX) {
+    // writeFileSync's `mode` is the open(2) creation mode — combined with the
+    // process umask. Belt-and-braces chmod below pins it to exactly 0o600.
+    writeFileSync(tmp, body, { mode: 0o600 });
+    chmodSync(tmp, 0o600);
+  } else {
+    // Windows ignores the mode bits. Create the file empty, limit it to the
+    // current account, and only then write the token into it. If access
+    // cannot be limited, remove the empty file and fail.
+    writeFileSync(tmp, '');
+    try {
+      restrictToOwnerOnWindows(tmp);
+    } catch (err) {
+      unlinkSync(tmp);
+      throw err;
+    }
+    writeFileSync(tmp, body);
+  }
 
   // Atomic on POSIX (single-fs rename(2)); on Windows MoveFileEx provides
   // similar semantics. If rename throws (e.g. cross-fs), the tmp file is left
