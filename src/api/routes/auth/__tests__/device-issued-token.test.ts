@@ -295,7 +295,11 @@ describe('device sign-in: issued token', () => {
     const ISSUED = 'device_sign_in.token_issued';
 
     function allRows(): AuditEventRow[] {
-      return h.auditEvents.findByTimeRange('1970-01-01T00:00:00.000Z', '9999-12-31T23:59:59.999Z', 500);
+      return h.auditEvents.findByTimeRange(
+        '1970-01-01T00:00:00.000Z',
+        '9999-12-31T23:59:59.999Z',
+        500,
+      );
     }
 
     function issuanceRows(): AuditEventRow[] {

@@ -10,7 +10,7 @@ import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { ownerOnlyAclArgs, windowsAccountName } from '../owner-only-file.js';
+import { icaclsPath, ownerOnlyAclArgs, windowsAccountName } from '../owner-only-file.js';
 import type { Credentials } from '../credentials.js';
 
 const CREDS: Credentials = {
@@ -43,6 +43,20 @@ describe('ownerOnlyAclArgs', () => {
 
   it('refuses an empty account name', () => {
     expect(() => ownerOnlyAclArgs('C:\\x', '')).toThrow(/account/);
+  });
+});
+
+describe('icaclsPath', () => {
+  it('names icacls by absolute path under SystemRoot, never by bare name', () => {
+    expect(icaclsPath({ SystemRoot: 'D:\\Win' })).toBe(
+      path.win32.join('D:\\Win', 'System32', 'icacls.exe'),
+    );
+  });
+
+  it('falls back to C:\\Windows when SystemRoot is unset or not absolute', () => {
+    const expected = path.win32.join('C:\\Windows', 'System32', 'icacls.exe');
+    expect(icaclsPath({})).toBe(expected);
+    expect(icaclsPath({ SystemRoot: 'relative\\dir' })).toBe(expected);
   });
 });
 
@@ -95,7 +109,8 @@ describe('writeCredentials on Windows (simulated)', () => {
 
     expect(calls).toHaveLength(1);
     const call = calls[0] as (typeof calls)[number];
-    expect(call.cmd).toBe('icacls');
+    expect(path.win32.isAbsolute(call.cmd as string)).toBe(true);
+    expect(path.win32.basename(call.cmd as string).toLowerCase()).toBe('icacls.exe');
     expect(call.args[0]).not.toBe(target);
     expect(path.dirname(call.args[0] as string)).toBe(dir);
     expect(call.args.slice(1, 3)).toEqual(['/inheritance:r', '/grant:r']);

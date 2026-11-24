@@ -204,9 +204,7 @@ describe('REST audit trail — session-authenticated surface outside /api/v1', (
     expect(issued).toBeDefined();
     expect(issued?.actor_id).toBe(String(userId));
     expect(issued?.resource_type).toBe('api_tokens');
-    expect(issued?.resource_id).toBe(
-      String(findByUserCode(deviceSession.userCode)?.mintedTokenId),
-    );
+    expect(issued?.resource_id).toBe(String(findByUserCode(deviceSession.userCode)?.mintedTokenId));
     const row = fresh.find((r) => r.action === 'POST /auth/device/verify') as AuditEventRow;
     expect(row).toBeDefined();
     expect(row.action).toBe('POST /auth/device/verify');
