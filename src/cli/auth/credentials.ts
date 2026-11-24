@@ -193,11 +193,11 @@ export function writeCredentials(
     writeFileSync(tmp, '');
     try {
       restrictToOwnerOnWindows(tmp);
+      writeFileSync(tmp, body);
     } catch (err) {
       unlinkSync(tmp);
       throw err;
     }
-    writeFileSync(tmp, body);
   }
 
   // Atomic on POSIX (single-fs rename(2)); on Windows MoveFileEx provides

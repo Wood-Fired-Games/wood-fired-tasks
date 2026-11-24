@@ -3,44 +3,77 @@
  *
  * POSIX mode bits (`0o600`, `chmod`) have no effect on a Windows access
  * list, so on Windows the credentials file is limited to the current
- * account with `icacls` (run by absolute path): inherited entries are removed and the account alone
- * is granted full control. `icacls` runs through `execFileSync` with an
- * argument array — no shell is involved, so a path with spaces or shell
+ * account with `icacls` (run by absolute path): inherited entries are
+ * removed and the account alone is granted full control. The account is
+ * the SID the OS reports for the current user (`whoami /user`), never a
+ * value read from the environment. Commands run through `execFileSync` with
+ * an argument array — no shell is involved, so a path with spaces or shell
  * metacharacters is passed through verbatim.
  */
 import { execFileSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 
+/** Absolute path of a program in the Windows System32 directory. */
+function system32(program: string, env: Record<string, string | undefined>): string {
+  const root = env['SystemRoot'];
+  const windowsDir = root && path.win32.isAbsolute(root) ? root : 'C:\\Windows';
+  return path.win32.join(windowsDir, 'System32', program);
+}
+
 /**
  * Absolute path of `icacls.exe` under the Windows directory. A bare name
  * would be resolved against the current directory before PATH.
  */
 export function icaclsPath(env: Record<string, string | undefined> = process.env): string {
-  const root = env['SystemRoot'];
-  const windowsDir = root && path.win32.isAbsolute(root) ? root : 'C:\\Windows';
-  return path.win32.join(windowsDir, 'System32', 'icacls.exe');
+  return system32('icacls.exe', env);
 }
 
-/** `icacls` arguments that leave `filePath` accessible to `account` only. */
+/**
+ * `icacls` arguments that leave `filePath` accessible to `account` only.
+ * The path is resolved to a full Windows path first, so it can never begin
+ * with `/` (which icacls would read as a switch).
+ */
 export function ownerOnlyAclArgs(filePath: string, account: string): string[] {
   if (account.length === 0) {
     throw new Error('Cannot limit file access: no account name');
   }
-  return [filePath, '/inheritance:r', '/grant:r', `${account}:F`];
+  const target = path.win32.resolve(filePath);
+  if (target.startsWith('/') || target.startsWith('-')) {
+    throw new Error(`Cannot limit file access: unexpected path ${filePath}`);
+  }
+  return [target, '/inheritance:r', '/grant:r', `${account}:F`];
 }
 
-/** The current Windows account as `DOMAIN\user`, or the bare user name. */
+/** The SID in `whoami /user /fo csv /nh` output, or null. */
+export function parseWhoamiSid(output: string): string | null {
+  const match = /"(S-1-\d+(?:-\d+)+)"/.exec(output);
+  return match?.[1] ?? null;
+}
+
+function runWhoami(): string {
+  return execFileSync(system32('whoami.exe', process.env), ['/user', '/fo', 'csv', '/nh'], {
+    encoding: 'utf8',
+    stdio: 'pipe',
+    windowsHide: true,
+  });
+}
+
+/**
+ * The current Windows account for an icacls grant: `*<SID>` from the OS,
+ * or the OS user name when no SID can be read.
+ */
 export function windowsAccountName(
-  env: Record<string, string | undefined> = process.env,
-  fallback: string = os.userInfo().username,
+  whoami: () => string = runWhoami,
+  osUserName: () => string = () => os.userInfo().username,
 ): string {
-  const user = env['USERNAME'];
-  const domain = env['USERDOMAIN'];
-  if (user && user.length > 0) {
-    return domain && domain.length > 0 ? `${domain}\\${user}` : user;
+  let sid: string | null = null;
+  try {
+    sid = parseWhoamiSid(whoami());
+  } catch {
+    sid = null;
   }
-  return fallback;
+  return sid !== null ? `*${sid}` : osUserName();
 }
 
 /**
