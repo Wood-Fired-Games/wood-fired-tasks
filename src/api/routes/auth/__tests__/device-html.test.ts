@@ -39,6 +39,11 @@ async function buildApp(): Promise<FastifyInstance> {
       throw new Error('device-html.test stub: insert() should not be called');
     },
   });
+  app.decorate('auditEventRepository', {
+    append: () => {
+      throw new Error('device-html.test stub: append() should not be called');
+    },
+  });
   await app.register(fastifyCookie);
   await app.register(fastifySecureSession, {
     sessionName: 'session',

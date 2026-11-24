@@ -27,7 +27,7 @@
  * stops at `approve(userCode, userId)` + the success page so the diff for
  * Plan 30-04 stays small.
  */
-import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify';
+import type { FastifyInstance, FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify';
 import {
   approve,
   deny,
@@ -90,6 +90,12 @@ const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fasti
   if (!fastify.hasDecorator('apiTokenRepository')) {
     throw new Error(
       'deviceHtmlRoute requires apiTokenRepository to be decorated before registration',
+    );
+  }
+  // The verify handler records each issued token in the audit trail.
+  if (!fastify.hasDecorator('auditEventRepository')) {
+    throw new Error(
+      'deviceHtmlRoute requires auditEventRepository to be decorated before registration',
     );
   }
   // ---------------------------------------------------------------------------
@@ -326,6 +332,10 @@ const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fasti
           });
           return replyHtml(reply, 500, html);
         }
+        // Audit trail — the issuance, attributed to the approver, with the
+        // issued token's id. The token, its hash and the user_code are
+        // never recorded.
+        recordIssuance(fastify, request, approverId, row.id, approvedSession.hostname);
         // Audit log — userId + tokenId only. token, hash, user_code, and
         // name are intentionally OMITTED (Threats T-30-04-02 / T-30-02-06).
         request.log.info(
@@ -361,6 +371,39 @@ const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fasti
     },
   );
 };
+
+/** Audit-trail action for a token issued by device sign-in. */
+export const DEVICE_TOKEN_ISSUED_ACTION = 'device_sign_in.token_issued';
+
+/**
+ * Append the issuance row to the audit trail. Non-fatal like every other
+ * audit producer — the token is already issued — but a failed append is
+ * always logged at ERROR as `audit.append_failed`.
+ */
+function recordIssuance(
+  fastify: FastifyInstance,
+  request: FastifyRequest,
+  approverId: number,
+  tokenId: number,
+  machine: string | null,
+): void {
+  try {
+    fastify.auditEventRepository.append({
+      actorType: 'user',
+      actorId: String(approverId),
+      action: DEVICE_TOKEN_ISSUED_ACTION,
+      resourceType: 'api_tokens',
+      resourceId: String(tokenId),
+      requestId: request.id,
+      metadata: { via: 'device_flow', machine },
+    });
+  } catch (err) {
+    request.log.error(
+      { err, requestId: request.id, action: DEVICE_TOKEN_ISSUED_ACTION, tokenId },
+      'audit.append_failed',
+    );
+  }
+}
 
 /** The approval form with the message for a code that can no longer be approved. */
 function renderUsedCodePage(request: FastifyRequest): string {

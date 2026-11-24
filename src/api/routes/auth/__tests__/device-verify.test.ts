@@ -46,6 +46,7 @@ import { runMigrations } from '../../../../db/migrate.js';
 import { seedIdentities } from '../../../../services/identity-seeder.js';
 import { UserRepository } from '../../../../repositories/user.repository.js';
 import { ApiTokenRepository } from '../../../../repositories/api-token.repository.js';
+import { AuditEventRepository } from '../../../../repositories/audit-event.repository.js';
 import { generateToken } from '../../../../services/pat-hash.js';
 import { LOGGER_REDACT_CONFIG } from '../../../server.js';
 
@@ -97,6 +98,7 @@ async function buildHarness(): Promise<Harness> {
   const app: any = Fastify({ loggerInstance: logger as any });
   app.decorate('userRepository', userRepo);
   app.decorate('apiTokenRepository', apiTokenRepo);
+  app.decorate('auditEventRepository', new AuditEventRepository(db));
 
   await app.register(fastifyCookie);
   await app.register(fastifySecureSession, {

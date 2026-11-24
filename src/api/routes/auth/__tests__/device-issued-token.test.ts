@@ -5,7 +5,7 @@
  * and pins the contract of the token the approval step issues: its scope,
  * its lifetime, whom it belongs to, and how many are issued per session.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
 import fastifyCookie from '@fastify/cookie';
 import fastifySecureSession from '@fastify/secure-session';
@@ -29,6 +29,9 @@ import { runMigrations } from '../../../../db/migrate.js';
 import { seedIdentities } from '../../../../services/identity-seeder.js';
 import { UserRepository } from '../../../../repositories/user.repository.js';
 import { ApiTokenRepository } from '../../../../repositories/api-token.repository.js';
+import { AuditEventRepository } from '../../../../repositories/audit-event.repository.js';
+import type { AuditEventRow } from '../../../../repositories/interfaces.js';
+import { hashToken } from '../../../../services/pat-hash.js';
 import { grantSatisfiesScope, type PatScope } from '../../../../schemas/pat-scope.schema.js';
 
 const ORIGIN = 'http://localhost:3000';
@@ -39,6 +42,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 interface Harness {
   app: FastifyInstance;
   db: Database.Database;
+  auditEvents: AuditEventRepository;
   userA: number;
   userB: number;
 }
@@ -55,6 +59,8 @@ async function buildHarness(): Promise<Harness> {
   const app: any = Fastify({ logger: false });
   app.decorate('userRepository', new UserRepository(db));
   app.decorate('apiTokenRepository', new ApiTokenRepository(db));
+  const auditEvents = new AuditEventRepository(db);
+  app.decorate('auditEventRepository', auditEvents);
 
   await app.register(fastifyCookie);
   await app.register(fastifySecureSession, {
@@ -90,7 +96,7 @@ async function buildHarness(): Promise<Harness> {
   await app.register(deviceHtmlRoute, { origin: ORIGIN });
   await app.ready();
 
-  return { app, db, userA, userB };
+  return { app, db, auditEvents, userA, userB };
 }
 
 async function signIn(app: FastifyInstance, userId: number): Promise<string> {
@@ -282,6 +288,92 @@ describe('device sign-in: issued token', () => {
       const denyAfter = await submit(h.userB, user_code, 'deny');
       expect(denyAfter.statusCode).toBe(400);
       expect(findByDeviceCode(device_code)?.status).toBe('approved');
+    });
+  });
+
+  describe('audit trail', () => {
+    const ISSUED = 'device_sign_in.token_issued';
+
+    function allRows(): AuditEventRow[] {
+      return h.auditEvents.findByTimeRange('1970-01-01T00:00:00.000Z', '9999-12-31T23:59:59.999Z', 500);
+    }
+
+    function issuanceRows(): AuditEventRow[] {
+      return allRows().filter((e) => e.action === ISSUED);
+    }
+
+    it('records the issuance with the approving user and the token id', async () => {
+      const { device_code, user_code } = await startSignIn(h.app, 'laptop');
+      expect((await approveAs(h.app, h.userA, user_code)).statusCode).toBe(200);
+      const session = findByDeviceCode(device_code);
+
+      const rows = issuanceRows();
+      expect(rows).toHaveLength(1);
+      const row = rows[0] as AuditEventRow;
+      expect(row.actor_type).toBe('user');
+      expect(row.actor_id).toBe(String(h.userA));
+      expect(row.resource_type).toBe('api_tokens');
+      expect(row.resource_id).toBe(String(session?.mintedTokenId));
+      expect(h.auditEvents.verifyChain()).toBeNull();
+    });
+
+    it('never writes the token or its hash into the audit trail', async () => {
+      const { device_code, user_code } = await startSignIn(h.app, 'laptop');
+      expect((await approveAs(h.app, h.userA, user_code)).statusCode).toBe(200);
+      const token = findByDeviceCode(device_code)?.mintedToken ?? '';
+      expect(token).toMatch(/^wft_pat_/);
+
+      const rows = allRows();
+      expect(rows.length).toBeGreaterThan(0);
+      const dump = JSON.stringify(rows);
+      expect(dump).not.toContain(token);
+      expect(dump).not.toContain(hashToken(token));
+    });
+
+    it('records no issuance when nothing is issued (Deny, refused second submission)', async () => {
+      const a = await startSignIn(h.app, 'laptop');
+      const cookie = await signIn(h.app, h.userA);
+      const page = await openApprovalPage(h.app, cookie, a.user_code);
+      const denied = await h.app.inject({
+        method: 'POST',
+        url: '/auth/device/verify',
+        payload: new URLSearchParams({
+          _csrf: page.csrf,
+          user_code: a.user_code,
+          action: 'deny',
+        }).toString(),
+        headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: page.cookie },
+      });
+      expect(denied.statusCode).toBe(200);
+      expect(issuanceRows()).toHaveLength(0);
+
+      const b = await startSignIn(h.app, 'laptop');
+      expect((await approveAs(h.app, h.userA, b.user_code)).statusCode).toBe(200);
+      expect((await approveAs(h.app, h.userB, b.user_code)).statusCode).toBe(400);
+      const rows = issuanceRows();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.actor_id).toBe(String(h.userA));
+    });
+
+    it('a failed audit append does not undo the sign-in', async () => {
+      const spy = vi.spyOn(h.auditEvents, 'append').mockImplementation(() => {
+        throw new Error('audit store unavailable');
+      });
+      const { device_code, user_code } = await startSignIn(h.app, 'laptop');
+      expect((await approveAs(h.app, h.userA, user_code)).statusCode).toBe(200);
+      expect(spy).toHaveBeenCalled();
+      expect(findByDeviceCode(device_code)?.mintedToken).toMatch(/^wft_pat_/);
+      spy.mockRestore();
+    });
+
+    it('the approval route refuses to register without the audit repository', async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const bare: any = Fastify({ logger: false });
+      bare.decorate('apiTokenRepository', {});
+      await expect(bare.register(deviceHtmlRoute, { origin: ORIGIN }).ready()).rejects.toThrow(
+        /auditEventRepository/,
+      );
+      await bare.close();
     });
   });
 
