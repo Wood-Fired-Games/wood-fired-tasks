@@ -78,6 +78,20 @@ export function renderDevicePage(props: DevicePageProps): string {
     `
     : '';
 
+  // Approve and Deny are offered only on a page that names the machine for
+  // the shown code; the hidden `confirmed_code` records which code that was.
+  // Without a machine name the form offers Continue, which shows this page.
+  const confirming = requestingMachine !== null && prefilledUserCode !== null;
+  const actions = confirming
+    ? html`
+      <input type="hidden" name="confirmed_code" value="${prefilledUserCode}">
+      <button type="submit" name="action" value="approve">Approve</button>
+      <button type="submit" name="action" value="deny">Deny</button>
+    `
+    : html`
+      <button type="submit" name="action" value="continue">Continue</button>
+    `;
+
   const body = html`
     <h1>Approve CLI sign-in</h1>
     ${unsafe(errorBlock)}
@@ -97,10 +111,10 @@ export function renderDevicePage(props: DevicePageProps): string {
           autocapitalize="characters"
           spellcheck="false"
           autofocus
+          ${unsafe(confirming ? 'readonly' : '')}
           value="${prefilledUserCode ?? ''}">
       </label>
-      <button type="submit" name="action" value="approve">Approve</button>
-      <button type="submit" name="action" value="deny">Deny</button>
+      ${unsafe(actions)}
     </form>
   `;
 

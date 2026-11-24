@@ -150,13 +150,40 @@ async function approveAs(
 ): Promise<{ statusCode: number; body: string }> {
   const cookie = await signIn(app, userId);
   const page = await openApprovalPage(app, cookie, userCode);
+  return postVerify(app, page.cookie, {
+    ...hiddenFields(page.body),
+    user_code: userCode,
+    action: 'approve',
+  });
+}
+
+/** The hidden inputs of the page's verify form, as the browser would send them. */
+function hiddenFields(body: string): Record<string, string> {
+  const $ = cheerio.load(body);
+  const out: Record<string, string> = {};
+  $('form[action="/auth/device/verify"] input[type="hidden"]').each((_, el) => {
+    const name = $(el).attr('name');
+    if (name) out[name] = $(el).attr('value') ?? '';
+  });
+  return out;
+}
+
+async function postVerify(
+  app: FastifyInstance,
+  cookie: string,
+  fields: Record<string, string>,
+): Promise<{ statusCode: number; body: string; cookie: string }> {
   const res = await app.inject({
     method: 'POST',
     url: '/auth/device/verify',
-    payload: new URLSearchParams({ _csrf: page.csrf, user_code: userCode }).toString(),
-    headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: page.cookie },
+    payload: new URLSearchParams(fields).toString(),
+    headers: { 'content-type': 'application/x-www-form-urlencoded', cookie },
   });
-  return { statusCode: res.statusCode, body: res.body };
+  return {
+    statusCode: res.statusCode,
+    body: res.body,
+    cookie: extractSessionCookie(res) ?? cookie,
+  };
 }
 
 async function poll(
@@ -241,13 +268,11 @@ describe('device sign-in: issued token', () => {
     ): Promise<{ statusCode: number; body: string }> {
       const cookie = await signIn(h.app, userId);
       const page = await openApprovalPage(h.app, cookie, userCode);
-      const res = await h.app.inject({
-        method: 'POST',
-        url: '/auth/device/verify',
-        payload: new URLSearchParams({ _csrf: page.csrf, user_code: userCode, action }).toString(),
-        headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: page.cookie },
+      return postVerify(h.app, page.cookie, {
+        ...hiddenFields(page.body),
+        user_code: userCode,
+        action,
       });
-      return { statusCode: res.statusCode, body: res.body };
     }
 
     it('the approval page names the machine that started the sign-in', async () => {
@@ -288,6 +313,76 @@ describe('device sign-in: issued token', () => {
       const denyAfter = await submit(h.userB, user_code, 'deny');
       expect(denyAfter.statusCode).toBe(400);
       expect(findByDeviceCode(device_code)?.status).toBe('approved');
+    });
+  });
+
+  describe('confirmation before approval', () => {
+    async function blankPage(userId: number): Promise<{ cookie: string; body: string }> {
+      const cookie = await signIn(h.app, userId);
+      const r = await h.app.inject({ method: 'GET', url: '/auth/device', headers: { cookie } });
+      expect(r.statusCode).toBe(200);
+      return { cookie: extractSessionCookie(r) ?? cookie, body: r.body };
+    }
+
+    it('a typed code is shown back with the machine name before anything is approved', async () => {
+      const { device_code, user_code } = await startSignIn(h.app, 'Build Box 7');
+      const blank = await blankPage(h.userA);
+      const $blank = cheerio.load(blank.body);
+      expect($blank('button[value="approve"]').length).toBe(0);
+      expect($blank('button[value="continue"]').length).toBe(1);
+
+      const shown = await postVerify(h.app, blank.cookie, {
+        ...hiddenFields(blank.body),
+        user_code,
+        action: 'continue',
+      });
+      expect(shown.statusCode).toBe(200);
+      const $shown = cheerio.load(shown.body);
+      expect($shown('.requesting-machine').text()).toContain('build-box-7');
+      expect($shown('button[value="approve"]').length).toBe(1);
+      expect($shown('button[value="deny"]').length).toBe(1);
+      expect(findByDeviceCode(device_code)?.status).toBe('pending');
+      expect(tokenRows(h.db)).toHaveLength(0);
+
+      // Approving from the page that named the machine completes the sign-in.
+      const done = await postVerify(h.app, shown.cookie, {
+        ...hiddenFields(shown.body),
+        user_code,
+        action: 'approve',
+      });
+      expect(done.statusCode).toBe(200);
+      expect(findByDeviceCode(device_code)?.status).toBe('approved');
+      expect(tokenRows(h.db)).toHaveLength(1);
+    });
+
+    it('approve without confirmation from a page naming the machine shows that page and approves nothing', async () => {
+      const { device_code, user_code } = await startSignIn(h.app, 'laptop');
+      const blank = await blankPage(h.userA);
+      const r = await postVerify(h.app, blank.cookie, {
+        ...hiddenFields(blank.body),
+        user_code,
+        action: 'approve',
+      });
+      expect(r.statusCode).toBe(200);
+      expect(cheerio.load(r.body)('.requesting-machine').text()).toContain('laptop');
+      expect(findByDeviceCode(device_code)?.status).toBe('pending');
+      expect(tokenRows(h.db)).toHaveLength(0);
+    });
+
+    it('a confirmation for a different code does not approve this one', async () => {
+      const other = await startSignIn(h.app, 'other');
+      const { device_code, user_code } = await startSignIn(h.app, 'laptop');
+      const cookie = await signIn(h.app, h.userA);
+      const page = await openApprovalPage(h.app, cookie, other.user_code);
+      const r = await postVerify(h.app, page.cookie, {
+        ...hiddenFields(page.body),
+        user_code,
+        action: 'approve',
+      });
+      expect(r.statusCode).toBe(200);
+      expect(findByDeviceCode(device_code)?.status).toBe('pending');
+      expect(findByDeviceCode(other.device_code)?.status).toBe('pending');
+      expect(tokenRows(h.db)).toHaveLength(0);
     });
   });
 

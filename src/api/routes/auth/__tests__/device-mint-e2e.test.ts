@@ -220,6 +220,8 @@ describe('device-flow end-to-end (server side)', () => {
     const verifyParams = new URLSearchParams({
       _csrf: csrf,
       user_code: codeBody.user_code,
+      confirmed_code: codeBody.user_code,
+      action: 'approve',
     }).toString();
     const verifyRes = await h.app.inject({
       method: 'POST',
@@ -331,7 +333,12 @@ describe('device-flow end-to-end (server side)', () => {
     const verifyRes = await h.app.inject({
       method: 'POST',
       url: '/auth/device/verify',
-      payload: new URLSearchParams({ _csrf: csrf, user_code }).toString(),
+      payload: new URLSearchParams({
+        _csrf: csrf,
+        user_code,
+        confirmed_code: user_code,
+        action: 'approve',
+      }).toString(),
       headers: {
         'content-type': 'application/x-www-form-urlencoded',
         cookie: c2,

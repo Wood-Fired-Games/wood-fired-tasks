@@ -49,8 +49,10 @@ describe('renderDevicePage', () => {
     expect(ucInput.attr('required')).not.toBeUndefined();
     expect(ucInput.attr('maxlength')).toBe('8');
     expect(ucInput.attr('pattern')).toBe('[A-HJ-KM-NP-Z2-9]{8}');
-    // Submit buttons: Approve and Deny
-    expect(form.find('button[type="submit"]').length).toBe(2);
+    // Without a machine name: a single Continue button, no Approve
+    expect(form.find('button[type="submit"]').length).toBe(1);
+    expect(form.find('button[value="continue"]').length).toBe(1);
+    expect(form.find('button[value="approve"]').length).toBe(0);
     // No prefilled-code paragraph when prefilledUserCode is null
     expect($('p.prefilled-code').length).toBe(0);
     // No error paragraph when errorMessage is null
@@ -152,9 +154,17 @@ describe('renderDevicePage', () => {
     expect($('.requesting-machine').length).toBe(0);
   });
 
-  it('offers Approve and Deny as two submit buttons of the same form', () => {
-    const out = renderDevicePage({ csrfToken: CSRF, prefilledUserCode: null, errorMessage: null });
+  it('offers Approve and Deny, with the confirmed code, only when the machine is named', () => {
+    const out = renderDevicePage({
+      csrfToken: CSRF,
+      prefilledUserCode: 'ABCDEFGH',
+      errorMessage: null,
+      requestingMachine: 'laptop',
+    });
     const $ = cheerio.load(out);
+    expect($('form input[name="confirmed_code"]').attr('value')).toBe('ABCDEFGH');
+    expect($('form input[name="user_code"]').attr('readonly')).not.toBeUndefined();
+    expect($('form button[value="continue"]').length).toBe(0);
     const approveBtn = $('form button[name="action"][value="approve"]');
     const denyBtn = $('form button[name="action"][value="deny"]');
     expect(approveBtn.length).toBe(1);

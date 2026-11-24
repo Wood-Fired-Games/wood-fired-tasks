@@ -188,7 +188,7 @@ describe('REST audit trail — session-authenticated surface outside /api/v1', (
       method: 'POST',
       url: '/auth/device/verify',
       headers: { cookie: refreshed, 'content-type': 'application/x-www-form-urlencoded' },
-      payload: `_csrf=${csrf}&user_code=${deviceSession.userCode}`,
+      payload: `_csrf=${csrf}&user_code=${deviceSession.userCode}&confirmed_code=${deviceSession.userCode}&action=approve`,
     });
     expect(verified.statusCode).toBe(200);
     // The flow really completed — a PAT was minted for this user.

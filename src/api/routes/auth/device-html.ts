@@ -78,8 +78,10 @@ interface DeviceQuery {
 interface VerifyBody {
   user_code?: unknown;
   _csrf?: unknown;
-  /** `'deny'` denies the session; anything else (or absent) approves. */
+  /** `'approve'`, `'deny'` or `'continue'`; any other value is refused. */
   action?: unknown;
+  /** The code shown with its machine name on the page that was submitted. */
+  confirmed_code?: unknown;
 }
 
 const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fastify, opts) => {
@@ -223,9 +225,11 @@ const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fasti
       //    refused.
       const user = requireUser(request);
 
+      const action = body.action;
+
       // Deny: only a pending session can be denied. Terminal — the CLI sees
       // access_denied on its next poll and no token is issued.
-      if (body.action === 'deny') {
+      if (action === 'deny') {
         if (!deny(userCode)) {
           return replyHtml(reply, 400, renderUsedCodePage(request));
         }
@@ -233,8 +237,25 @@ const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fasti
         return replyHtml(reply, 200, renderDeviceDeniedPage());
       }
 
+      const sameApprover = session.status === 'approved' && session.approvedUserId === user.id;
+
+      // Confirmation: approval happens only from a page that named the
+      // requesting machine for this code (its form carries
+      // `confirmed_code`). Continue, or an approve without that
+      // confirmation, shows that page and changes nothing.
+      const approvable =
+        session.status === 'pending' || (sameApprover && session.mintedToken === null);
+      if (approvable && (action === 'continue' || body.confirmed_code !== userCode)) {
+        const html = renderDevicePage({
+          csrfToken: getOrCreateCsrfToken(request),
+          prefilledUserCode: userCode,
+          errorMessage: null,
+          requestingMachine: session.hostname ?? 'unknown',
+        });
+        return replyHtml(reply, 200, html);
+      }
+
       if (session.status !== 'pending') {
-        const sameApprover = session.status === 'approved' && session.approvedUserId === user.id;
         if (sameApprover && session.mintedToken !== null) {
           return replyHtml(reply, 200, renderDeviceApprovedPage());
         }

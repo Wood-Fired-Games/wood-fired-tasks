@@ -180,7 +180,14 @@ function postVerify(
   body: Record<string, string>,
   headers: Record<string, string> = {},
 ) {
-  const params = new URLSearchParams(body).toString();
+  // Default to what the confirmation page (which names the machine) submits
+  // on Approve: the explicit action plus the confirmed code.
+  const fields: Record<string, string> = {
+    action: 'approve',
+    ...(body['user_code'] !== undefined ? { confirmed_code: body['user_code'] } : {}),
+    ...body,
+  };
+  const params = new URLSearchParams(fields).toString();
   return app.inject({
     method: 'POST',
     url: '/auth/device/verify',
