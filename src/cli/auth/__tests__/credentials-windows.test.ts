@@ -7,7 +7,16 @@
  * mocked `execFileSync`. They do not run `icacls` itself.
  */
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
@@ -285,6 +294,20 @@ describe('writeCredentials on Windows (simulated)', () => {
     expect(() => writeCredentials(CREDS, target)).toThrow(/owner/i);
     expect(existsSync(target)).toBe(false);
     expect(readdirSync(dir)).toEqual([]);
+  });
+
+  it('leaves the target untouched and nothing behind when the final move fails', async () => {
+    // A non-empty directory at the target path makes the move onto it fail.
+    const target = path.join(dir, 'target-as-dir');
+    mkdirSync(target);
+    writeFileSync(path.join(target, 'sentinel'), 'x');
+    const { writeCredentials } = await loadAsWindows(fakeExec(() => {}));
+
+    expect(() => writeCredentials(CREDS, target)).toThrow();
+    expect(statSync(target).isDirectory()).toBe(true);
+    expect(readdirSync(target)).toEqual(['sentinel']);
+    // No `.credentials-*` staging directory and no tmp file remain.
+    expect(readdirSync(dir)).toEqual(['target-as-dir']);
   });
 
   it('runs every command without a shell, by absolute path, with an argument array', async () => {
