@@ -40,6 +40,7 @@ import { createApp } from '../../../../index.js';
 import { initOidc } from '../../../../services/oidc-client.js';
 import { UserRepository } from '../../../../repositories/user.repository.js';
 import { ApiTokenRepository } from '../../../../repositories/api-token.repository.js';
+import { AuditEventRepository } from '../../../../repositories/audit-event.repository.js';
 import { initDatabase } from '../../../../db/database.js';
 import { runMigrations } from '../../../../db/migrate.js';
 import { seedIdentities } from '../../../../services/identity-seeder.js';
@@ -92,6 +93,7 @@ async function buildEnabledHarness(): Promise<Harness> {
   const app: any = Fastify({ logger: false });
   app.decorate('userRepository', userRepository);
   app.decorate('apiTokenRepository', apiTokenRepository);
+  app.decorate('auditEventRepository', new AuditEventRepository(db));
 
   await app.register(fastifyCookie);
   await app.register(fastifySecureSession, {

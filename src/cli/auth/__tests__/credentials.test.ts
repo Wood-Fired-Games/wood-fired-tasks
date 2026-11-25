@@ -87,7 +87,9 @@ describe('getCredentialsPath', () => {
 
   it('uses XDG_CONFIG_HOME when absolute', () => {
     process.env.XDG_CONFIG_HOME = '/tmp/xdg-abs';
-    expect(getCredentialsPath()).toBe('/tmp/xdg-abs/wood-fired-tasks/credentials');
+    // Built with the platform path module, as the code builds it: forward
+    // slashes on POSIX, backslashes on Windows.
+    expect(getCredentialsPath()).toBe(join('/tmp/xdg-abs', 'wood-fired-tasks', 'credentials'));
   });
 
   it('falls through to $HOME/.config when XDG_CONFIG_HOME is relative (POSIX spec)', () => {
@@ -142,9 +144,9 @@ describe('writeCredentials', () => {
     expect(existsSync(target)).toBe(true);
   });
 
-  it('is atomic: when rename fails, the target path stays absent and tmp is left behind', () => {
+  it('is atomic: when rename fails, the target stays untouched (POSIX keeps the tmp file, Windows keeps nothing)', () => {
     // Force rename(2) to fail by making the target itself a non-empty
-    // directory. POSIX rename of a regular file ONTO a non-empty dir fails
+    // directory. Renaming a regular file ONTO a non-empty dir fails
     // with ENOTEMPTY/EISDIR — exactly the "rename throws after tmp write"
     // codepath we want to exercise.
     const target = join(tmpDir, 'target-as-dir');
@@ -156,10 +158,20 @@ describe('writeCredentials', () => {
 
     // Target is still a directory (untouched by the failed rename).
     expect(statSync(target).isDirectory()).toBe(true);
-    // The tmp file SHOULD have been written to disk before the rename — that's
-    // the contract: write-then-rename never leaves the final path corrupt.
-    const tmps = readdirSync(dirname(target)).filter((n) => n.startsWith('target-as-dir.tmp.'));
-    expect(tmps.length).toBeGreaterThanOrEqual(1);
+    expect(readdirSync(target)).toEqual(['sentinel']);
+    const siblings = readdirSync(dirname(target));
+    if (POSIX) {
+      // The tmp file SHOULD have been written to disk before the rename — that's
+      // the contract: write-then-rename never leaves the final path corrupt.
+      const tmps = siblings.filter((n) => n.startsWith('target-as-dir.tmp.'));
+      expect(tmps.length).toBeGreaterThanOrEqual(1);
+    } else {
+      // Windows stages the file in a private `.credentials-*` directory and
+      // removes that directory when the write fails, so nothing is left.
+      // credentials-windows.test.ts checks the same contract with win32
+      // simulated, so it also runs on POSIX.
+      expect(siblings).toEqual(['target-as-dir']);
+    }
   });
 });
 

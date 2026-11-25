@@ -46,6 +46,7 @@ import { runMigrations } from '../../../../db/migrate.js';
 import { seedIdentities } from '../../../../services/identity-seeder.js';
 import { UserRepository } from '../../../../repositories/user.repository.js';
 import { ApiTokenRepository } from '../../../../repositories/api-token.repository.js';
+import { AuditEventRepository } from '../../../../repositories/audit-event.repository.js';
 import { generateToken } from '../../../../services/pat-hash.js';
 import { LOGGER_REDACT_CONFIG } from '../../../server.js';
 
@@ -97,6 +98,7 @@ async function buildHarness(): Promise<Harness> {
   const app: any = Fastify({ loggerInstance: logger as any });
   app.decorate('userRepository', userRepo);
   app.decorate('apiTokenRepository', apiTokenRepo);
+  app.decorate('auditEventRepository', new AuditEventRepository(db));
 
   await app.register(fastifyCookie);
   await app.register(fastifySecureSession, {
@@ -173,19 +175,36 @@ async function fetchCsrf(
   return { csrf, cookie: rotated ?? cookie };
 }
 
-function postVerify(
+async function postVerify(
   app: FastifyInstance,
   body: Record<string, string>,
   headers: Record<string, string> = {},
+  afterPageServed: () => void = () => {},
 ) {
-  const params = new URLSearchParams(body).toString();
+  // Default to what a browser does to approve: open the page that names the
+  // machine for the code (the server records that it served it), then
+  // submit Approve from it with the same session.
+  const fields: Record<string, string> = { action: 'approve', ...body };
+  const finalHeaders = { ...headers };
+  const code = body['user_code'];
+  if (fields['action'] === 'approve' && code !== undefined && headers['cookie'] !== undefined) {
+    const page = await app.inject({
+      method: 'GET',
+      url: `/auth/device?user_code=${encodeURIComponent(code)}`,
+      headers: { cookie: headers['cookie'] },
+    });
+    const rotated = extractSessionCookie(page);
+    if (rotated) finalHeaders['cookie'] = rotated;
+    afterPageServed();
+  }
+  const params = new URLSearchParams(fields).toString();
   return app.inject({
     method: 'POST',
     url: '/auth/device/verify',
     payload: params,
     headers: {
       'content-type': 'application/x-www-form-urlencoded',
-      ...headers,
+      ...finalHeaders,
     },
   });
 }
@@ -374,11 +393,13 @@ describe('POST /auth/device/verify', () => {
       clientId: 'verify-test-key',
       hostname: null,
     });
-    harness.drainLogs();
+    // Only the verify POST's log lines are checked (the page GET before it
+    // is a separate request).
     const r = await postVerify(
       harness.app,
       { _csrf: csrf, user_code: ds.userCode },
       { cookie: c2 },
+      harness.drainLogs,
     );
     expect(r.statusCode).toBe(200);
 
@@ -443,8 +464,8 @@ describe('POST /auth/device/verify', () => {
       expect(row).toBeDefined();
       expect(row?.user_id).toBe(harness.legacyUserId);
       expect(row?.name).toBe(`cli-laptop-${todayUtc()}`);
-      expect(row?.expires_at).toBeNull();
-      expect(row?.scopes).toBe('[]');
+      expect(row?.expires_at).not.toBeNull();
+      expect(row?.scopes).toBe('["read","write"]');
       // Hash matches the plaintext stored on the session.
       expect(row?.hash).toBe(hashToken(after?.mintedToken ?? ''));
     });
@@ -558,11 +579,12 @@ describe('POST /auth/device/verify', () => {
         clientId: 'verify-test-key',
         hostname: 'logtest',
       });
-      harness.drainLogs();
+      // Only the verify POST's log lines are checked.
       const r = await postVerify(
         harness.app,
         { _csrf: csrf, user_code: ds.userCode },
         { cookie: c2 },
+        harness.drainLogs,
       );
       expect(r.statusCode).toBe(200);
       const after = findByUserCode(ds.userCode);

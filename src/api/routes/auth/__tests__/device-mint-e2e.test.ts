@@ -43,6 +43,7 @@ import { runMigrations } from '../../../../db/migrate.js';
 import { seedIdentities } from '../../../../services/identity-seeder.js';
 import { UserRepository } from '../../../../repositories/user.repository.js';
 import { ApiTokenRepository } from '../../../../repositories/api-token.repository.js';
+import { AuditEventRepository } from '../../../../repositories/audit-event.repository.js';
 import { hashToken } from '../../../../services/pat-hash.js';
 
 const ORIGIN = 'http://localhost:3000';
@@ -76,6 +77,7 @@ async function buildHarness(): Promise<Harness> {
   const app: any = Fastify({ logger: false });
   app.decorate('userRepository', userRepo);
   app.decorate('apiTokenRepository', apiTokenRepo);
+  app.decorate('auditEventRepository', new AuditEventRepository(db));
 
   await app.register(fastifyCookie);
   await app.register(fastifySecureSession, {
@@ -218,6 +220,7 @@ describe('device-flow end-to-end (server side)', () => {
     const verifyParams = new URLSearchParams({
       _csrf: csrf,
       user_code: codeBody.user_code,
+      action: 'approve',
     }).toString();
     const verifyRes = await h.app.inject({
       method: 'POST',
@@ -329,7 +332,11 @@ describe('device-flow end-to-end (server side)', () => {
     const verifyRes = await h.app.inject({
       method: 'POST',
       url: '/auth/device/verify',
-      payload: new URLSearchParams({ _csrf: csrf, user_code }).toString(),
+      payload: new URLSearchParams({
+        _csrf: csrf,
+        user_code,
+        action: 'approve',
+      }).toString(),
       headers: {
         'content-type': 'application/x-www-form-urlencoded',
         cookie: c2,

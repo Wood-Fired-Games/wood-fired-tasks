@@ -19,7 +19,11 @@
  */
 import { describe, it, expect } from 'vitest';
 import * as cheerio from 'cheerio';
-import { renderDevicePage, renderDeviceApprovedPage } from '../pages/device.js';
+import {
+  renderDevicePage,
+  renderDeviceApprovedPage,
+  renderDeviceDeniedPage,
+} from '../pages/device.js';
 
 const CSRF = 'a'.repeat(64);
 
@@ -45,8 +49,10 @@ describe('renderDevicePage', () => {
     expect(ucInput.attr('required')).not.toBeUndefined();
     expect(ucInput.attr('maxlength')).toBe('8');
     expect(ucInput.attr('pattern')).toBe('[A-HJ-KM-NP-Z2-9]{8}');
-    // Submit button
+    // Without a machine name: a single Continue button, no Approve
     expect(form.find('button[type="submit"]').length).toBe(1);
+    expect(form.find('button[value="continue"]').length).toBe(1);
+    expect(form.find('button[value="approve"]').length).toBe(0);
     // No prefilled-code paragraph when prefilledUserCode is null
     expect($('p.prefilled-code').length).toBe(0);
     // No error paragraph when errorMessage is null
@@ -114,6 +120,97 @@ describe('renderDevicePage', () => {
       prefilledUserCode: null,
       errorMessage: null,
     });
+    expect(out.toLowerCase().startsWith('<!doctype html>')).toBe(true);
+  });
+
+  it('shows the requesting machine name when one is supplied', () => {
+    const out = renderDevicePage({
+      csrfToken: CSRF,
+      prefilledUserCode: 'ABCDEFGH',
+      errorMessage: null,
+      requestingMachine: 'build-box-7',
+    });
+    const $ = cheerio.load(out);
+    expect($('.requesting-machine').text()).toContain('build-box-7');
+  });
+
+  it('escapes the requesting machine name', () => {
+    const out = renderDevicePage({
+      csrfToken: CSRF,
+      prefilledUserCode: 'ABCDEFGH',
+      errorMessage: null,
+      requestingMachine: '<script>alert(1)</script>',
+    });
+    expect(out).not.toContain('<script>alert(1)</script>');
+    expect(out).toContain('&lt;script&gt;');
+    const $ = cheerio.load(out);
+    expect($('script').length).toBe(0);
+    expect($('.requesting-machine').text()).toContain('<script>alert(1)</script>');
+  });
+
+  it('renders no machine line when no machine name is supplied', () => {
+    const out = renderDevicePage({ csrfToken: CSRF, prefilledUserCode: null, errorMessage: null });
+    const $ = cheerio.load(out);
+    expect($('.requesting-machine').length).toBe(0);
+  });
+
+  it('offers Approve and Deny, with the code read-only, only when the machine is named', () => {
+    const out = renderDevicePage({
+      csrfToken: CSRF,
+      prefilledUserCode: 'ABCDEFGH',
+      errorMessage: null,
+      requestingMachine: 'laptop',
+    });
+    const $ = cheerio.load(out);
+    expect($('form input[name="confirmed_code"]').length).toBe(0);
+    expect($('form input[name="user_code"]').attr('readonly')).not.toBeUndefined();
+    expect($('form button[value="continue"]').length).toBe(0);
+    const approveBtn = $('form button[name="action"][value="approve"]');
+    const denyBtn = $('form button[name="action"][value="deny"]');
+    expect(approveBtn.length).toBe(1);
+    expect(approveBtn.attr('type')).toBe('submit');
+    expect(approveBtn.text()).toContain('Approve');
+    expect(denyBtn.length).toBe(1);
+    expect(denyBtn.attr('type')).toBe('submit');
+    expect(denyBtn.text()).toContain('Deny');
+  });
+});
+
+describe('renderDevicePage: Enter on the confirmation page', () => {
+  const confirming = () =>
+    cheerio.load(
+      renderDevicePage({
+        csrfToken: CSRF,
+        prefilledUserCode: 'ABCDEFGH',
+        errorMessage: null,
+        requestingMachine: 'laptop',
+      }),
+    );
+
+  it('the form’s default button (first submit button) is disabled and is not Approve', () => {
+    const $ = confirming();
+    const first = $('form button[type="submit"]').first();
+    expect(first.attr('value')).not.toBe('approve');
+    expect(first.attr('disabled')).not.toBeUndefined();
+  });
+
+  it('nothing on the confirmation page has autofocus', () => {
+    const $ = confirming();
+    expect($('[autofocus]').length).toBe(0);
+  });
+
+  it('the blank page keeps autofocus on the code field', () => {
+    const $ = cheerio.load(
+      renderDevicePage({ csrfToken: CSRF, prefilledUserCode: null, errorMessage: null }),
+    );
+    expect($('input[name="user_code"]').attr('autofocus')).not.toBeUndefined();
+  });
+});
+
+describe('renderDeviceDeniedPage', () => {
+  it('confirms the sign-in was denied', () => {
+    const out = renderDeviceDeniedPage();
+    expect(out.toLowerCase()).toContain('denied');
     expect(out.toLowerCase().startsWith('<!doctype html>')).toBe(true);
   });
 });

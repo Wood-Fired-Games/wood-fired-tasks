@@ -188,17 +188,25 @@ describe('REST audit trail — session-authenticated surface outside /api/v1', (
       method: 'POST',
       url: '/auth/device/verify',
       headers: { cookie: refreshed, 'content-type': 'application/x-www-form-urlencoded' },
-      payload: `_csrf=${csrf}&user_code=${deviceSession.userCode}`,
+      payload: `_csrf=${csrf}&user_code=${deviceSession.userCode}&action=approve`,
     });
     expect(verified.statusCode).toBe(200);
     // The flow really completed — a PAT was minted for this user.
     expect(findByUserCode(deviceSession.userCode)?.status).toBe('approved');
 
-    const rows = await waitForRows(rowsForUser, before + 1);
-    // EXACTLY one new row: the sign-in probe (no principal) and the GET
+    const rows = await waitForRows(rowsForUser, before + 2);
+    // EXACTLY two new rows: the request row from the hook and the issuance
+    // row from the handler. The sign-in probe (no principal) and the GET
     // (read verb) contributed nothing.
-    expect(rows).toHaveLength(before + 1);
-    const row = rows[0] as AuditEventRow;
+    expect(rows).toHaveLength(before + 2);
+    const fresh = rows.slice(0, 2);
+    const issued = fresh.find((r) => r.action === 'device_sign_in.token_issued');
+    expect(issued).toBeDefined();
+    expect(issued?.actor_id).toBe(String(userId));
+    expect(issued?.resource_type).toBe('api_tokens');
+    expect(issued?.resource_id).toBe(String(findByUserCode(deviceSession.userCode)?.mintedTokenId));
+    const row = fresh.find((r) => r.action === 'POST /auth/device/verify') as AuditEventRow;
+    expect(row).toBeDefined();
     expect(row.action).toBe('POST /auth/device/verify');
     expect(row.actor_id).toBe(String(userId));
     expect(row.actor_type).toBe('user');

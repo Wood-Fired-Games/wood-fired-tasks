@@ -25,8 +25,10 @@
 import {
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   renameSync,
+  rmSync,
   statSync,
   unlinkSync,
   writeFileSync,
@@ -36,6 +38,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { parse, stringify } from 'smol-toml';
 import { z } from 'zod';
+import { restrictToOwnerOnWindows } from './owner-only-file.js';
 
 const POSIX = process.platform !== 'win32';
 
@@ -179,16 +182,59 @@ export function writeCredentials(
     '# Do NOT commit this file to version control.\n\n';
   const body = header + stringify(creds);
 
+  if (!POSIX) {
+    writeCredentialsWindows(body, filePath);
+    return;
+  }
+
   const tmp = `${filePath}.tmp.${process.pid}.${Date.now()}`;
   // writeFileSync's `mode` is the open(2) creation mode — combined with the
   // process umask. Belt-and-braces chmod below pins it to exactly 0o600.
   writeFileSync(tmp, body, { mode: 0o600 });
-  if (POSIX) chmodSync(tmp, 0o600);
+  chmodSync(tmp, 0o600);
 
   // Atomic on POSIX (single-fs rename(2)); on Windows MoveFileEx provides
   // similar semantics. If rename throws (e.g. cross-fs), the tmp file is left
   // behind — acceptable; the final path never sees partial state.
   renameSync(tmp, filePath);
+}
+
+/**
+ * Windows uses access lists rather than mode bits. The file is written into
+ * a new directory next to the target that is limited to the current account
+ * (with inheritance to its files) while still empty, so the file has the
+ * owner-only list from the moment it exists. It is then moved into place and
+ * limited explicitly. On failure nothing is left behind and the first error
+ * is raised; a failure while cleaning up never replaces it.
+ */
+function writeCredentialsWindows(body: string, filePath: string): void {
+  const privateDir = mkdtempSync(path.join(path.dirname(filePath), '.credentials-'));
+  let failure: { err: unknown } | null = null;
+  try {
+    restrictToOwnerOnWindows(privateDir, { inheritable: true });
+    const staged = path.join(privateDir, 'credentials');
+    writeFileSync(staged, body, { flag: 'wx' });
+    renameSync(staged, filePath);
+    try {
+      restrictToOwnerOnWindows(filePath);
+    } catch (err) {
+      ignoreFailure(() => unlinkSync(filePath));
+      throw err;
+    }
+  } catch (err) {
+    failure = { err };
+  } finally {
+    ignoreFailure(() => rmSync(privateDir, { recursive: true, force: true }));
+  }
+  if (failure !== null) throw failure.err;
+}
+
+function ignoreFailure(fn: () => void): void {
+  try {
+    fn();
+  } catch {
+    // Cleanup only: the caller reports the error that matters.
+  }
 }
 
 export function deleteCredentials(filePath: string = getCredentialsPath()): boolean {

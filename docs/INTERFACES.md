@@ -92,7 +92,7 @@ The identity / auth / web surface (`src/api/routes/me/`, `auth/`, `web/`):
 | POST | `/auth/device/code` | `routes/auth/device-code.ts` | Device-flow: request a device + user code. | OIDC |
 | POST | `/auth/device/token` | `routes/auth/device-token.ts` | Device-flow: poll/exchange for a token. | OIDC |
 | GET | `/auth/device` | `routes/auth/device-html.ts` | Device-flow: code-entry HTML page. | OIDC |
-| POST | `/auth/device/verify` | `routes/auth/device-html.ts` | Device-flow: submit the user code. | OIDC |
+| POST | `/auth/device/verify` | `routes/auth/device-html.ts` | Device-flow: approve or deny the user code. | OIDC |
 | GET | `/web/login` | `routes/web/login.ts` | Browser login page. | OIDC |
 | GET | `/web/me` | `routes/web/me.ts` | Browser account page. | Session |
 | GET | `/web/me/tokens` | `routes/web/tokens.ts` | Browser PAT management page. | Session |

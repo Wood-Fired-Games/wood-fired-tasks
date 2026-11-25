@@ -27,14 +27,21 @@
  * stops at `approve(userCode, userId)` + the success page so the diff for
  * Plan 30-04 stays small.
  */
-import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify';
+import type { FastifyInstance, FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify';
 import {
   approve,
+  deny,
+  DEVICE_TOKEN_SCOPES,
+  deviceTokenExpiresAt,
   findByUserCode,
   recordMintedToken,
   tokenName,
 } from '../../../services/device-flow-store.js';
-import { renderDevicePage, renderDeviceApprovedPage } from '../../../web/pages/device.js';
+import {
+  renderDevicePage,
+  renderDeviceApprovedPage,
+  renderDeviceDeniedPage,
+} from '../../../web/pages/device.js';
 import { getOrCreateCsrfToken, verifyCsrfToken } from './csrf.js';
 import { requireUser } from '../../plugins/auth.js';
 import { generateToken } from '../../../services/pat-hash.js';
@@ -71,6 +78,8 @@ interface DeviceQuery {
 interface VerifyBody {
   user_code?: unknown;
   _csrf?: unknown;
+  /** `'approve'`, `'deny'` or `'continue'`; any other value is refused. */
+  action?: unknown;
 }
 
 const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fastify, opts) => {
@@ -81,6 +90,12 @@ const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fasti
   if (!fastify.hasDecorator('apiTokenRepository')) {
     throw new Error(
       'deviceHtmlRoute requires apiTokenRepository to be decorated before registration',
+    );
+  }
+  // The verify handler records each issued token in the audit trail.
+  if (!fastify.hasDecorator('auditEventRepository')) {
+    throw new Error(
+      'deviceHtmlRoute requires auditEventRepository to be decorated before registration',
     );
   }
   // ---------------------------------------------------------------------------
@@ -105,10 +120,27 @@ const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fasti
     // session.csrf entry on first visit so the subsequent POST has
     // something to validate against.
     const csrfToken = getOrCreateCsrfToken(request);
+    // Name the machine that started the sign-in, when the code belongs to an
+    // unexpired session this user may approve: a pending one, or one this
+    // user approved whose token could not be issued.
+    const found = safeUserCode !== null ? findByUserCode(safeUserCode) : undefined;
+    const viewerId = getSessionUserId(request);
+    const approvable =
+      found !== undefined &&
+      Date.now() <= found.expiresAt &&
+      (found.status === 'pending' ||
+        (found.status === 'approved' &&
+          found.approvedUserId === viewerId &&
+          found.mintedToken === null));
+    const requestingMachine = approvable ? found.hostname : null;
+    if (requestingMachine !== null && safeUserCode !== null && viewerId !== null) {
+      rememberShownCode(request, viewerId, safeUserCode);
+    }
     const html = renderDevicePage({
       csrfToken,
       prefilledUserCode: safeUserCode,
       errorMessage: null,
+      requestingMachine,
     });
     return reply
       .header('Cache-Control', 'no-store')
@@ -182,9 +214,6 @@ const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fasti
       const now = Date.now();
       const expired =
         session === undefined || session.status === 'expired' || now > session.expiresAt;
-      // Plan 30-04 will treat status==='approved' (with a different userId)
-      // as a no-op too; for this plan the approve() helper's own idempotency
-      // is the source of truth.
       if (expired || session.status === 'denied') {
         const csrfToken = getOrCreateCsrfToken(request);
         const html = renderDevicePage({
@@ -197,8 +226,72 @@ const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fasti
 
       // 4. Approve. requireUser() narrows request.user — the chain's
       //    sessionOnly gate has already proved session auth at this point.
+      //    Only a pending session can be approved. A repeat submission by
+      //    the user who already approved it is answered with the success
+      //    page and issues nothing new; any other non-pending session is
+      //    refused.
       const user = requireUser(request);
-      approve(userCode, user.id);
+
+      // Only the three form actions are accepted, exactly as the buttons send
+      // them; anything else (including no action at all) is refused.
+      const action = body.action;
+      if (action !== 'approve' && action !== 'deny' && action !== 'continue') {
+        const html = renderDevicePage({
+          csrfToken: getOrCreateCsrfToken(request),
+          prefilledUserCode: null,
+          errorMessage: 'Choose Approve or Deny.',
+        });
+        return replyHtml(reply, 400, html);
+      }
+
+      // Deny: only a pending session can be denied. Terminal — the CLI sees
+      // access_denied on its next poll and no token is issued.
+      if (action === 'deny') {
+        if (!deny(userCode)) {
+          return replyHtml(reply, 400, renderUsedCodePage(request));
+        }
+        request.log.info({ event: 'device_flow_denied', userId: user.id }, 'device flow denied');
+        recordDeviceEvent(fastify, request, {
+          actorId: user.id,
+          action: DEVICE_SIGN_IN_DENIED_ACTION,
+          resourceType: 'device_sign_in',
+          resourceId: null,
+          machine: session.hostname,
+        });
+        return replyHtml(reply, 200, renderDeviceDeniedPage());
+      }
+
+      const sameApprover = session.status === 'approved' && session.approvedUserId === user.id;
+
+      // Confirmation: approval happens only after the server has served
+      // this user a page naming the requesting machine for this code (held
+      // in the server session, see rememberShownCode). Continue, or an
+      // approve without that, serves the page and changes nothing.
+      const approvable =
+        session.status === 'pending' || (sameApprover && session.mintedToken === null);
+      if (approvable && (action === 'continue' || !wasShownCode(request, user.id, userCode))) {
+        rememberShownCode(request, user.id, userCode);
+        const html = renderDevicePage({
+          csrfToken: getOrCreateCsrfToken(request),
+          prefilledUserCode: userCode,
+          errorMessage: null,
+          requestingMachine: session.hostname ?? 'unknown',
+        });
+        return replyHtml(reply, 200, html);
+      }
+
+      if (session.status !== 'pending') {
+        if (sameApprover && session.mintedToken !== null) {
+          return replyHtml(reply, 200, renderDeviceApprovedPage());
+        }
+        if (!sameApprover) {
+          return replyHtml(reply, 400, renderUsedCodePage(request));
+        }
+      }
+      if (!approve(userCode, user.id)) {
+        return replyHtml(reply, 400, renderUsedCodePage(request));
+      }
+      forgetShownCode(request, userCode);
 
       // Audit log — userId only. user_code MUST NOT appear (Threat T-30-02-06).
       request.log.info(
@@ -224,21 +317,38 @@ const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fasti
       // The store guarantees this lookup is non-null at this point
       // (approve() returned successfully, no concurrent remove()). The
       // narrow is a type-system requirement, not a runtime expectation.
-      if (!approvedSession) {
+      if (!approvedSession || approvedSession.approvedUserId === null) {
         throw new Error('device-flow: session vanished between approve() and mint');
       }
+      // The issued token belongs to the user recorded as the approver.
+      const approverId = approvedSession.approvedUserId;
       const name = tokenName(approvedSession.hostname ?? 'unknown');
       try {
         const { token, prefix, suffix, hash } = generateToken();
         const row = fastify.apiTokenRepository.insert({
-          userId: user.id,
+          userId: approverId,
           name,
           prefix,
           suffix,
           hash,
-          scopes: JSON.stringify([]),
-          expiresAt: null,
+          scopes: JSON.stringify(DEVICE_TOKEN_SCOPES),
+          expiresAt: deviceTokenExpiresAt(),
         });
+        // Audit trail — the issuance, attributed to the approver, with the
+        // issued token's id. The token, its hash and the user_code are never
+        // recorded. A token whose issuance cannot be recorded is revoked and
+        // never handed to the session.
+        const issued = recordDeviceEvent(fastify, request, {
+          actorId: approverId,
+          action: DEVICE_TOKEN_ISSUED_ACTION,
+          resourceType: 'api_tokens',
+          resourceId: row.id,
+          machine: approvedSession.hostname,
+        });
+        if (!issued) {
+          revokeQuietly(fastify, request, row.id, approverId);
+          return replyHtml(reply, 500, renderSignInErrorPage(request));
+        }
         // WR-01 (Phase 30 review) — `recordMintedToken` returns `false`
         // when the session is no longer in 'approved' state (e.g. a
         // concurrent `remove()` raced, or the cleanup tick fired between
@@ -253,36 +363,25 @@ const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fasti
           token,
         });
         if (!stashed) {
-          // Best-effort revoke — if THIS fails too, log + carry on; the
-          // outer catch will render the same error page.
-          try {
-            fastify.apiTokenRepository.revoke(row.id, user.id);
-          } catch (revokeErr) {
-            request.log.error(
-              {
-                err: revokeErr,
-                event: 'pat_orphan_revoke_failed',
-                userId: user.id,
-                tokenId: row.id,
-              },
-              'failed to revoke orphan PAT after recordMintedToken returned false',
-            );
+          // Revoke, and record the revocation in the audit trail.
+          if (revokeQuietly(fastify, request, row.id, approverId)) {
+            recordDeviceEvent(fastify, request, {
+              actorId: approverId,
+              action: DEVICE_TOKEN_REVOKED_ACTION,
+              resourceType: 'api_tokens',
+              resourceId: row.id,
+              machine: approvedSession.hostname,
+            });
           }
           request.log.warn(
             {
               event: 'device_flow_mint_stash_failed',
-              userId: user.id,
+              userId: approverId,
               tokenId: row.id,
             },
             'recordMintedToken returned false — session not in approved state; orphan PAT revoked',
           );
-          const csrfToken = getOrCreateCsrfToken(request);
-          const html = renderDevicePage({
-            csrfToken,
-            prefilledUserCode: null,
-            errorMessage: 'Could not complete sign-in. Please try again.',
-          });
-          return replyHtml(reply, 500, html);
+          return replyHtml(reply, 500, renderSignInErrorPage(request));
         }
         // Audit log — userId + tokenId only. token, hash, user_code, and
         // name are intentionally OMITTED (Threats T-30-04-02 / T-30-02-06).
@@ -290,7 +389,7 @@ const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fasti
           {
             event: 'pat_minted',
             via: 'device_flow',
-            userId: user.id,
+            userId: approverId,
             tokenId: row.id,
           },
           'pat minted via device flow',
@@ -302,7 +401,7 @@ const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fasti
         // until the device-code TTL elapses (graceful degradation per
         // Threat T-30-04-05 disposition).
         request.log.error(
-          { err, event: 'pat_mint_failed', userId: user.id },
+          { err, event: 'pat_mint_failed', userId: approverId },
           'pat mint failed during device flow',
         );
         const csrfToken = getOrCreateCsrfToken(request);
@@ -319,6 +418,132 @@ const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fasti
     },
   );
 };
+
+/**
+ * Codes for which the server has served the signed-in user a page naming
+ * the requesting machine. Kept in the server-encrypted session, bound to the
+ * user id it was served to; the most recent few are kept so several open
+ * tabs work.
+ */
+const SHOWN_CODES_KEY = 'deviceShownCodes';
+const SHOWN_CODES_MAX = 5;
+
+interface ShownCodes {
+  userId: number;
+  codes: string[];
+}
+
+function readShownCodes(request: FastifyRequest): ShownCodes | null {
+  const raw: ShownCodes | null | undefined = request.session.get(SHOWN_CODES_KEY);
+  if (!raw || typeof raw.userId !== 'number' || !Array.isArray(raw.codes)) return null;
+  return raw;
+}
+
+function rememberShownCode(request: FastifyRequest, userId: number, code: string): void {
+  const current = readShownCodes(request);
+  const codes = current !== null && current.userId === userId ? current.codes : [];
+  const next = [code, ...codes.filter((c) => c !== code)].slice(0, SHOWN_CODES_MAX);
+  request.session.set(SHOWN_CODES_KEY, { userId, codes: next });
+}
+
+function wasShownCode(request: FastifyRequest, userId: number, code: string): boolean {
+  const current = readShownCodes(request);
+  return current !== null && current.userId === userId && current.codes.includes(code);
+}
+
+function forgetShownCode(request: FastifyRequest, code: string): void {
+  const current = readShownCodes(request);
+  if (current === null) return;
+  request.session.set(SHOWN_CODES_KEY, {
+    userId: current.userId,
+    codes: current.codes.filter((c) => c !== code),
+  });
+}
+
+/** Audit-trail actions written by device sign-in. */
+export const DEVICE_TOKEN_ISSUED_ACTION = 'device_sign_in.token_issued';
+export const DEVICE_TOKEN_REVOKED_ACTION = 'device_sign_in.token_revoked';
+export const DEVICE_SIGN_IN_DENIED_ACTION = 'device_sign_in.denied';
+
+interface DeviceEvent {
+  actorId: number;
+  action: string;
+  resourceType: string;
+  resourceId: number | null;
+  machine: string | null;
+}
+
+/**
+ * Append one device sign-in row to the audit trail. Returns false when the
+ * append fails; the failure is always logged at ERROR as
+ * `audit.append_failed`. The caller decides whether that is fatal.
+ */
+function recordDeviceEvent(
+  fastify: FastifyInstance,
+  request: FastifyRequest,
+  event: DeviceEvent,
+): boolean {
+  try {
+    fastify.auditEventRepository.append({
+      actorType: 'user',
+      actorId: String(event.actorId),
+      action: event.action,
+      resourceType: event.resourceType,
+      resourceId: event.resourceId === null ? null : String(event.resourceId),
+      requestId: request.id,
+      metadata: { via: 'device_flow', machine: event.machine },
+    });
+    return true;
+  } catch (err) {
+    request.log.error(
+      {
+        err,
+        requestId: request.id,
+        action: event.action,
+        ...(event.resourceType === 'api_tokens' ? { tokenId: event.resourceId } : {}),
+      },
+      'audit.append_failed',
+    );
+    return false;
+  }
+}
+
+/** Revoke a just-issued token; returns false (and logs) if the revoke fails. */
+function revokeQuietly(
+  fastify: FastifyInstance,
+  request: FastifyRequest,
+  tokenId: number,
+  userId: number,
+): boolean {
+  try {
+    fastify.apiTokenRepository.revoke(tokenId, userId);
+    return true;
+  } catch (revokeErr) {
+    request.log.error(
+      { err: revokeErr, event: 'pat_orphan_revoke_failed', userId, tokenId },
+      'failed to revoke a token that was not handed to the session',
+    );
+    return false;
+  }
+}
+
+/** The approval form with the recoverable sign-in error. */
+function renderSignInErrorPage(request: FastifyRequest): string {
+  return renderDevicePage({
+    csrfToken: getOrCreateCsrfToken(request),
+    prefilledUserCode: null,
+    errorMessage: 'Could not complete sign-in. Please try again.',
+  });
+}
+
+/** The approval form with the message for a code that can no longer be approved. */
+function renderUsedCodePage(request: FastifyRequest): string {
+  return renderDevicePage({
+    csrfToken: getOrCreateCsrfToken(request),
+    prefilledUserCode: null,
+    errorMessage: 'That code has already been used. Please run `tasks login` again.',
+  });
+}
 
 /**
  * Shared HTML reply builder — same headers on every branch so the cache

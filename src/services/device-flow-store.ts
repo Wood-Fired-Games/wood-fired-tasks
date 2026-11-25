@@ -33,12 +33,27 @@
  * @see .planning/phases/30-cli-authentication/30-01-PLAN.md
  */
 import { randomBytes } from 'node:crypto';
+import type { PatScope } from '../schemas/pat-scope.schema.js';
 
 /** RFC 8628 §3.2 default `expires_in` — 10 minutes. */
 export const SESSION_TTL_MS = 600_000;
 
 /** Cleanup cadence — every 60 s we prune entries past their TTL. */
 export const CLEANUP_TICK_MS = 60_000;
+
+/**
+ * Scope of the token issued by device sign-in: what the CLI needs for normal
+ * use: reading and changing tasks.
+ */
+export const DEVICE_TOKEN_SCOPES: readonly PatScope[] = ['read', 'write'];
+
+/** Lifetime of the token issued by device sign-in, in days. */
+export const DEVICE_TOKEN_LIFETIME_DAYS = 90;
+
+/** ISO-8601 expiry for a device sign-in token issued at `now` (ms). */
+export function deviceTokenExpiresAt(now: number = Date.now()): string {
+  return new Date(now + DEVICE_TOKEN_LIFETIME_DAYS * 24 * 60 * 60 * 1000).toISOString();
+}
 
 /**
  * 31-symbol user_code alphabet — RFC 8628 §6.1 recommends a "subset that
@@ -350,13 +365,14 @@ export function tokenName(sanitizedHostname: string, now: Date = new Date()): st
  * order caller minting a PAT while the user is still in the `pending`
  * (or worse, `denied`) state.
  *
- * Idempotency: a second call with the same args is treated as a no-op
- * (returns true). This makes the verify handler safe against an accidental
- * double-submit without leaking a fresh token.
+ * One token per session: a second call with the same args is a no-op
+ * (returns true); a call carrying a different token for a session that
+ * already holds one returns false and leaves the stored token in place.
  *
  * Returns false (no mutation) when:
  *   - session not found (unknown userCode), OR
- *   - session.status !== 'approved'.
+ *   - session.status !== 'approved', OR
+ *   - the session already holds a different token.
  */
 export function recordMintedToken(
   userCode: string,
@@ -365,6 +381,9 @@ export function recordMintedToken(
   const session = findByUserCode(userCode);
   if (!session) return false;
   if (session.status !== 'approved') return false;
+  if (session.mintedTokenId !== null) {
+    return session.mintedTokenId === args.tokenId && session.mintedToken === args.token;
+  }
   session.mintedTokenId = args.tokenId;
   session.mintedToken = args.token;
   return true;

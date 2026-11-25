@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-11-24T07:25:05.476Z",
+    "generated_at": "2026-11-24T21:13:08.361Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -93,7 +93,7 @@
       "notes": "Hand-authored today; counts drift-checked by scripts/agent-context/__tests__/interfaces-counts.test.ts. A future task may swap to a true generator.",
       "approx_token_budget": 8000,
       "actual_lines": 400,
-      "sha256": "95f6aff2d52090c13b486871414150b31702f380ddc6ef4c0769368d4229de51",
+      "sha256": "46981aeba1b8814b631bcca9baf6db63ff90cb3a03bfddd0fa74fd5a633b0c3f",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -122,7 +122,7 @@
       "notes": "Advisory budget — currently exceeds the contract target; tighten in a follow-up.",
       "approx_token_budget": 34600,
       "actual_lines": 1727,
-      "sha256": "6b974a07d5a4240b56aab74a3b0815f3eec53de66b3452205b5377c59ade376c"
+      "sha256": "9f16d7d412506da874def34ca4089f474d381a605a4e3947cbeb89895176599c"
     },
     {
       "path": "docs/MCP.md",
@@ -150,7 +150,7 @@
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 39000,
       "actual_lines": 1950,
-      "sha256": "3942de4739228527355163c9606129dc318c9cda19115a2cca3b9f6dcd9b69da"
+      "sha256": "1bf99c116baba379b7f42e179a29eaab972a30853c311819062b13d4a32b0866"
     },
     {
       "path": "docs/SETUP.md",
@@ -164,7 +164,7 @@
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 32400,
       "actual_lines": 1593,
-      "sha256": "004832f0647b5f846144d21cb2d27156a06ea1d7fb7c3f3ca363ced350abb2af"
+      "sha256": "ef7c920f4f2585c68e2ff079101622f4b52941e6c96f8c0b5d7edc9df92667f5"
     },
     {
       "path": "docs/SLACK.md",

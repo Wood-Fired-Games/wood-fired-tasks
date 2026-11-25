@@ -46,10 +46,25 @@ export interface DevicePageProps {
    * BEFORE the form.
    */
   errorMessage: string | null;
+  /**
+   * Name of the machine that started the sign-in, as the CLI reported it.
+   * Client-supplied text: rendered only through the escaping `html` template.
+   * Omitted or `null` when no pending session matches the prefilled code.
+   */
+  requestingMachine?: string | null;
 }
 
 export function renderDevicePage(props: DevicePageProps): string {
   const { csrfToken, prefilledUserCode, errorMessage } = props;
+  const requestingMachine = props.requestingMachine ?? null;
+
+  const machineLine =
+    requestingMachine !== null
+      ? html`
+      <p class="requesting-machine">Requested by the machine: <strong>${requestingMachine}</strong></p>
+      <p>Approve only if you started this sign-in on that machine.</p>
+    `
+      : '';
 
   const errorBlock = errorMessage
     ? html`
@@ -63,10 +78,28 @@ export function renderDevicePage(props: DevicePageProps): string {
     `
     : '';
 
+  // Approve and Deny are offered only on a page that names the machine for
+  // the shown code (the server records that it served this page). Without a
+  // machine name the form offers Continue, which shows this page.
+  const confirming = requestingMachine !== null && prefilledUserCode !== null;
+  // On the confirmation page the form's default button (the first submit
+  // button, which Enter triggers) is a hidden, disabled one, so Enter submits
+  // nothing; Approve and Deny need a click.
+  const actions = confirming
+    ? html`
+      <button type="submit" disabled hidden aria-hidden="true" tabindex="-1"></button>
+      <button type="submit" name="action" value="approve">Approve</button>
+      <button type="submit" name="action" value="deny">Deny</button>
+    `
+    : html`
+      <button type="submit" name="action" value="continue">Continue</button>
+    `;
+
   const body = html`
     <h1>Approve CLI sign-in</h1>
     ${unsafe(errorBlock)}
     ${unsafe(prefilledEcho)}
+    ${unsafe(machineLine)}
     <form method="POST" action="/auth/device/verify">
       <input type="hidden" name="_csrf" value="${csrfToken}">
       <label>
@@ -80,14 +113,22 @@ export function renderDevicePage(props: DevicePageProps): string {
           autocomplete="off"
           autocapitalize="characters"
           spellcheck="false"
-          autofocus
+          ${unsafe(confirming ? 'readonly' : 'autofocus')}
           value="${prefilledUserCode ?? ''}">
       </label>
-      <button type="submit">Approve</button>
+      ${unsafe(actions)}
     </form>
   `;
 
   return layout({ title: 'Approve CLI sign-in', body });
+}
+
+export function renderDeviceDeniedPage(): string {
+  const body = html`
+    <h1>Denied</h1>
+    <p>The sign-in was denied and no token was issued. You can close this window.</p>
+  `;
+  return layout({ title: 'Denied', body });
 }
 
 export function renderDeviceApprovedPage(): string {

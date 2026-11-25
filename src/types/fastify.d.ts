@@ -141,6 +141,11 @@ declare module '@fastify/secure-session' {
     /** Epoch milliseconds of the most recent successful sign-in. */
     authenticatedAt: number;
     /**
+     * Device sign-in codes for which this user was served the page naming
+     * the requesting machine (src/api/routes/auth/device-html.ts).
+     */
+    deviceShownCodes: { userId: number; codes: string[] };
+    /**
      * Transient OIDC handshake state, cleared on successful callback.
      * Survives the Google redirect via the cookie.
      */
