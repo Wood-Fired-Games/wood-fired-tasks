@@ -11,14 +11,14 @@ what is in scope.
 Only the current `main` branch and the most recent tagged release receive
 security updates. Older tags are provided as-is.
 
-| Version           | Supported          |
-| ----------------- | ------------------ |
-| `main` (HEAD)     | :white_check_mark: |
-| `v2.9.0` (latest) | :white_check_mark: |
-| `v1.0` – `v2.8.0` | :x:                |
+| Version            | Supported          |
+| ------------------ | ------------------ |
+| `main` (HEAD)      | :white_check_mark: |
+| `v2.10.0` (latest) | :white_check_mark: |
+| `v1.0` – `v2.9.0`  | :x:                |
 
 "Latest" tracks whichever tag is most recent on GitHub; at the time of
-writing that is `v2.9.0`. If you are reading this on an older checkout,
+writing that is `v2.10.0`. If you are reading this on an older checkout,
 verify the current latest release via
 `git tag --sort=-creatordate | head -1` or the GitHub Releases page.
 
